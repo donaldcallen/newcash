@@ -1,0 +1,10 @@
+[package]
+    name = "transaction_scheduler"
+    version = "0.1.0"
+    authors = ["Don Allen <donaldcallen@gmail.com>"]
+
+[dependencies]
+    rust_library={path="../rust_library"}
+    rusqlite = "0.20.0"
+
+

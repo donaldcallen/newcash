@@ -1,0 +1,4 @@
+indent_style = "Visual"
+fn_args_layout = "Compressed"
+format_strings = true
+normalize_comments = true

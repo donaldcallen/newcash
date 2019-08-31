@@ -1,0 +1,83 @@
+#!/bin/sh
+
+#Constants
+usage='Usage: newcashGenerateReports
+	-w is the directory where you want the report files to be written. Default is /tmp.
+	-n is the name you want the report files to have. Default is reports.*.
+	-t is the name you want the .tsv file to have, without the .tsv extension (added automatically). Default is Nothing, resulting in no file being written.
+	-b is the begin date for the Income Statement in YYYY-MM-DD format. Default is the current day less one year plus one day.
+	-e is the end date for the Income Statement and the date of the Balance Sheet in YYYY-MM-DD format. Default is the current day.
+	-d is the maximum depth to which to descend into the account tree when generating the Balance Sheet and Income Statement. Default is 5.
+	-t is the path to be used to generate a .tsv file of open positions. If Nothing, no file is generated. This is the default.
+	-s takes no argument. If present, report generation is skipped.
+	-h generates this usage message.
+    The above options must be followed by the path to the Newcash database from which you wish to generate the reports.'
+
+#Directory containing sqlite extensions library
+EXTENSIONS_DIR=${HOME}/lib/`uname`
+
+# Defaults
+report_directory=.
+report_name=reports
+tsv_file_name=Nothing
+begin_date=`sqlite3 "" "select date('now', 'localtime', '-1 years', '+1 days');"` 
+end_date=`date +%F`
+depth=5
+quotes=false
+generate_reports=true
+
+while getopts c:f:w:n:b:e:d:t:sh option
+do 
+	case $option in
+	f)
+		newcash_database_path=$OPTARG;;
+	w)
+		report_directory=$OPTARG;;
+	n)
+		report_name=$OPTARG;;
+	t)
+		tsv_file_name=$OPTARG;;
+	b)
+		begin_date=$OPTARG;;
+	e)
+		end_date=$OPTARG;;
+	d)
+		depth=$OPTARG;;
+	s)
+		generate_reports=false;;
+	h)
+		echo "$usage"; exit 1;;
+	\?)
+		echo "$usage"; exit 1;;
+	esac
+done
+
+## Get the required path to the database into the first positional arg
+shift $(($OPTIND-1))
+## And check to be sure it's there
+if test $# -ne 1
+then
+    echo "You did not supply the required argument"
+    echo "$usage"
+    exit 1
+fi
+newcash_database_path=$1
+
+if $(${quotes}) 
+then
+	newcashGetQuotes ${newcash_database_path}
+fi
+
+if $(${generate_reports})
+then
+    if test $tsv_file_name != Nothing
+    then full_tsv_file_name=${report_directory}/${tsv_file_name}.tsv
+    else full_tsv_file_name=Nothing
+    fi
+	report_generator  ${begin_date} ${end_date} ${depth} ${newcash_database_path} ${report_directory}/${report_name}.tex ${full_tsv_file_name} ${EXTENSIONS_DIR}/libSqliteExtensions.so
+fi
+
+while pdflatex --output-directory ${report_directory} ${report_directory}/${report_name} | fgrep 'Rerun LaTeX'
+do
+	echo 'Re-running Latex to get table widths right.'
+done

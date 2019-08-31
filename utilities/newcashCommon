@@ -1,0 +1,58 @@
+proc guidToPath {database accountGuid} {
+    set path {}
+    while {1} {
+        set accountInfo [$database eval {select name, parent_guid from accounts where guid = $accountGuid and guid != (select root_account_guid from book)}]
+        switch [llength $accountInfo] {
+            2 {set path "[lindex $accountInfo 0]:$path"; set accountGuid [lindex $accountInfo 1]}
+            0 {break}
+            default {puts stderr {guidToPath query returned invalid number of elements}; exit 1}
+           } 
+    }
+    return ":[string trimright $path :]"
+}
+
+proc inheritedP {database childGuid flagBit} {
+    # Here a1 is the parent account, a2 is the account we are starting from
+    while {True} {
+        set result [$database eval {select a1.guid, a1.flags from accounts a1, accounts a2 where a2.guid=$childGuid and a1.guid=a2.parent_guid}]
+        switch -exact [llength $result] {
+            2 { set parentGuid [lindex $result 0]
+                set parentFlags [lindex $result 1]
+                if {[expr $parentFlags & $flagBit]} {
+                    return True
+                } else {
+                    # If we get here, we haven't reached the root yet or found an ancestor with the flag bit set 
+                    set childGuid $parentGuid
+                }
+            }
+            0 { return False
+            }
+            default { puts stderr "inheritedP query returned incorrect number of result values: $result"
+                      exit 1
+            }
+        }
+    }
+    puts stderr {inheritedP: should not be possible to reach this point}
+    exit(1)
+}
+
+proc pathToGuid {database accountPath} {
+    set nameList [lreverse [lrange [split $accountPath :] 1 end]]
+    set count 1
+    set from {}
+    set where {}
+    set length [llength $nameList]
+    foreach name $nameList {
+        set from "$from, accounts a$count"
+        if {$count == $length} {
+            set where "$where and a${count}.name='$name' and a${count}.parent_guid=(select root_account_guid from book)"
+        } else {
+            set where "$where and a${count}.name='$name' and a${count}.parent_guid=a[incr count].guid"
+        }
+    }
+    # Trim the results
+    set from [string trimleft $from ,]
+    set where [string range $where 5 end]
+    # And assemble the query
+    return [$database eval "select a1.guid from $from where $where"]
+}

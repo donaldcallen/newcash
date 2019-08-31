@@ -1,0 +1,12 @@
+#!/usr/bin/dash
+
+# Get the directory where this script lives, because that's where the .awk files also live
+dir=`dirname $0`
+
+if test $# != 2
+then
+    echo 'Usage: first argument is the .csv file. Second argument is the name of the edited and sorted version of same.'
+    exit 1
+else    
+    awk -f ${dir}/newcashTDAmeritradePreProcessCSV.awk $1 | sort -t ',' -k 1 > $2
+fi

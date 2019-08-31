@@ -1,0 +1,60 @@
+#!/bin/sh
+
+#Constants
+usage='Usage: newcashCompositeRegister
+	-b is the begin date for transactions to be included in the composite register. Defaults to first day of last month.
+	-e is the end date for transactions to be included in the composite register. Defaults to last day of last month.
+	-d is the description filter. It defaults to %, which matches any description.
+	-c is the concise option. When specified, the splits that refer to the account selected by the required argument below are not included in the output.
+	-h generates this usage message.
+	The above options must be followed by two required arguments:
+		the path to the account for which you want the composite register, and
+		the path to the Newcash database.'
+
+if test $# -eq 0
+then
+    echo "$usage"
+    exit 1
+fi
+
+# Defaults
+begin_date=`sqlite3 "" "select date('now', 'localtime', 'start of month', '-1 month');"` 
+end_date=`sqlite3 "" "select date('now', 'localtime', 'start of month', '-1 day');"` 
+description='%'
+concise=false
+
+while getopts cb:e:d:h option
+do 
+	case $option in
+	b)
+		begin_date=$OPTARG;;
+	e)
+		end_date=$OPTARG;;
+	d)
+		description=$OPTARG;;
+    c)
+        concise=true;;
+	h)
+		echo "$usage"; exit 1;;
+	\?)
+		echo "$usage"; exit 1;;
+	esac
+done
+
+## Get the required args
+shift $((${OPTIND}-1))
+## And check to be sure it's there
+if test $# -ne 2 
+then
+    echo "You did not supply two required arguments"
+    exit 1
+fi
+account_path=$1
+newcash_database_path=$2
+
+if `${concise}`
+then
+    composite_register "${begin_date}" "${end_date}" "${description}" "${account_path}" ${newcash_database_path} | sed -e "/${account_path}/ d"
+else
+    composite_register "${begin_date}" "${end_date}" "${description}" "${account_path}" ${newcash_database_path} 
+fi

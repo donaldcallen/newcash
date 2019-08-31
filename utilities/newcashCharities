@@ -1,0 +1,23 @@
+select description, sum(value)
+from
+    (
+        select t.post_date, t.description, s.value
+        from transactions t, accounts a, splits s
+        where s.account_guid = a.guid
+        and s.tx_guid = t.guid
+        and a.parent_guid = '5e389f65a5469e25e3085bbb07e8e084'
+        and julianday(t.post_date) >= julianday('2018-01-01 00:00:00')
+        and julianday(t.post_date) < julianday('2019-01-01 00:00:00')
+        union
+        select t.post_date, t.description, s.value
+        from transactions t, accounts a, accounts p, splits s
+        where s.account_guid = a.guid
+        and s.tx_guid = t.guid
+        and p.guid = a.parent_guid and p.parent_guid = '5e389f65a5469e25e3085bbb07e8e084'
+        and julianday(t.post_date) >= julianday('2018-01-01 00:00:00')
+        and julianday(t.post_date) < julianday('2019-01-01 00:00:00')
+    )
+
+group by description
+order by description;
+

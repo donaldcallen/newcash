@@ -1,0 +1,61 @@
+#!/usr/bin/env tclsh
+
+package require sqlite3
+source [exec which newcashCommon]
+
+## Constants
+set accountIdentifierIndex 0
+set dbFileIndex 1
+set commandLineArgs {accountIdentifier pathToDatabase}
+
+## Check that the number of arguments is correct
+if {$argc != [llength $commandLineArgs]} {
+    puts "Usage: newcashReconciliationAid $commandLineArgs"
+    puts "You supplied: $argv"
+    exit 1
+}
+
+## Get the arguments
+set accountIdentifier [lindex $argv $accountIdentifierIndex]
+set dbFile [lindex $argv $dbFileIndex]
+
+
+## Open the database
+sqlite3 db $dbFile
+
+## Get the requested account guid
+## The account identifier can be either a path or a guid
+## If it is longer than 32 characters or is not a member of the alnum class, then assume it's a path
+if {[string length $accountIdentifier] > 32 || ![string is alnum $accountIdentifier]} {
+	puts "Treating first command line argument as an account path"
+	puts "Processing account $accountIdentifierd"
+	set accountGuid [pathToGuid db $accountIdentifier]
+} else {
+	puts "Treating first command line argument as a guid"
+	puts "Processing account [guidToPath db $accountIdentifier]"
+	set accountGuid $accountIdentifier
+}
+
+if {[string length $accountGuid] == 0} {
+    puts stderr "Failed to find the GUID for the account you specified. Please check the account path."
+    exit 1
+}
+
+# Get the duplicate transactions
+set dups [db eval {select distinct a.post_date, a.value
+    from (select t.guid, date(t.post_date) as post_date, s.value
+            from transactions t, splits s
+            where s.account_guid=$accountGuid and s.tx_guid = t.guid) a, 
+        (select t.guid, date(t.post_date) as post_date, s.value
+            from transactions t, splits s
+            where s.account_guid=$accountGuid and s.tx_guid = t.guid) b 
+    where a.post_date=b.post_date
+        and a.value = b.value
+        and a.value != 0.0
+        and a.guid <> b.guid
+    order by a.post_date}]
+
+# Print them
+foreach {post_date value} $dups {
+    puts "$post_date, $value"
+}
