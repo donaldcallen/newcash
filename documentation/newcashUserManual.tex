@@ -409,10 +409,10 @@ OpenBSD, FreeBSD and DragonFly\footnote{It is very likely that Newcash will also
 in the case of Windows, Cygwin, I have no plans to port the system to Windows or the MacIntosh.}.
 
 The Rust version has been tested on the Arch, Debian, Ubuntu and MX Linux distributions. Rust is generally available for Linux distributions and I would not expect any difficulty in running Newcash on any of them (Alpine may be an exception, given its use
-of Busybox and an alternative C library, Musl). Rust is also available on FreeBSD and would expect the Rust version to work properly. Rust is also available as a package on DragonFlyBSD, but the version of the toolchain is usually behind
+of Busybox and an alternative C library, Musl). Rust is also available on FreeBSD and I would expect the Rust version to work properly. Rust is also available as a package on DragonFlyBSD, but the version of the toolchain is usually behind
 the current version. 
 
-If you prefer to use the C version, it is available in a separate repository at github. Understand that I am no longer adding features to the C version (though, truth be told, 
+If you prefer to use the C version, it is available in the \verb|donaldcallen/newcash_c| repository at github. Understand that I am no longer adding features to the C version (though, truth be told, 
 I don't anticipate many additions to the Rust version either; after five years of managing my own finances with Newcash, it has long since reached the point where it has everything
 I need), though if a bug comes to my attention, I will fix it. Nonetheless, I recommend that you only use the C version if you are running an OS for which Rust is not available. I am using the Rust version for my own financial
 work and it will benefit from any issues I encounter. In addition, while the C version is generally reliable, there have been some unexplained crashes over the years that I have not been able to reproduce and, therefore, debug.
@@ -441,7 +441,7 @@ You will also likely need to set up a \verb|~/bin/make| symbolic link to the gma
 Your own bin directory should appear before the system directories in your \verb|PATH|, 
 otherwise \verb|make| will refer to BSD make, which will not work correctly.
 \item If you are installing the Rust version, you will need the Rust compiler and toolchain. See https://www.rust-lang.org for installation instructions. 
-\item A C compiler, available as \verb|cc|. I have built Newcash with gcc and clang; either one is fine.
+\item A C compiler, available as \verb|cc|. I have built the C version of Newcash with gcc and clang; either one is fine.
 \item The m4 macro processor.
 \item The GTK+3 library and header files.
 \item The sqlite3 library, header files and command line program.
