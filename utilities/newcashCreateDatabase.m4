@@ -1,4 +1,4 @@
-m4_include(`newcash.m4')m4_dnl
+m4_include(`../newcash.m4')m4_dnl
 #!/usr/bin/env tclsh
 
 package require sqlite3

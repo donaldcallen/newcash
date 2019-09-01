@@ -22,11 +22,11 @@ M4 = \
 	newcashIRR \
 	newcashLoadQuotes  \
 	newcashReconciliationAid \
-	newcashScheduledLoanPayment
+	newcashScheduledLoanPayment \
 
 all: ${M4}
 
-%: %.m4 newcash.m4
+%: %.m4 ../newcash.m4
 	m4 -P $< > $@
 
 clean:
