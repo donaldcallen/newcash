@@ -13,9 +13,6 @@ EXE = \
 	newcashLoadQuotes \
 	newcashReconciliationAid \
 	newcashScheduledLoanPayment \
-	newcashTDAmeritradeImporter \
-	newcashTDAmeritradePreProcess \
-	newcashTDAmeritradePreProcessCSV.awk \
 	newcashVanguardImporter \
 	newcashVanguardPreProcessor.awk
 
@@ -25,8 +22,7 @@ M4 = \
 	newcashIRR \
 	newcashLoadQuotes  \
 	newcashReconciliationAid \
-	newcashScheduledLoanPayment \
-	newcashTDAmeritradeImporter
+	newcashScheduledLoanPayment
 
 all: ${M4}
 
