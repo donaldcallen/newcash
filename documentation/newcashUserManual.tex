@@ -315,7 +315,7 @@ Each account has a
 \item [Name] The name you give an account is completely your choice, e.g., Cambridge Trust Joint Checking Account.
 \item [Parent] The internal name of the account's parent\footnote{``Internal names'' of database objects in Newcash are randomly-generated 32-character strings, called GUIDs (Globally Unique IDentifiers), used throughout Newcash databases and the programs that manipulate them to name and refer to particular database objects. Their function is similar to that of the Vehicle Identification Number of your car (there is one and only one vehicle -- yours -- identified by your car's VIN).  During normal operation of Newcash and its associated utility programs, you will not need to concern yourself with GUIDs. I mention them only to make you aware of their existence, which could be useful in an unusual situation, e.g., your database becomes corrupted due to a hardware problem.}. For example, the Cambridge Trust Joint Checking Account might be the child of an account called Bank Accounts, so this field would point to that account.
 \item [Commodity] If needed, the internal name of an associated commodity\footnote{If not needed, this field contains a special value that, in effect, indicates that it is ``not applicable''.}. The only accounts that have valid internal commodity names are marketable asset accounts and income accounts whose income is derived from a commodity, such as an income account representing the dividends from a stock position.
-\item [Code] This field is used to store account numbers. For most accounts, Newcash doesn't make use of this field, but there is one important exception: accounts for which you wish to use the Newcash Statement Importer, you \emph{must} store the correct account number in this field. Examples of such accounts are liability accounts representing credit cards. See Section \ref{Statement Importer} for more information.
+\item [Code] This field is used to store account numbers. For most accounts, Newcash doesn't make use of this field, but there is one important exception: accounts for which you wish to use the Newcash Statement Importer, you \emph{must} store the correct account number in this field. Examples of such accounts are liability accounts representing credit cards.
 \item [Flags] Account flags are boolean values -- they are either Set (True) or UnSet (False). These flags are (the first four are self-explanatory):
 \begin{description}
 \item [Descendents are Assets]
@@ -1084,7 +1084,7 @@ where both John and Mary's salaries are taxable and therefore want to be designa
 
 \subsection{Composite Register}
 \label{Composite Register}
-Newcash is designed to provide separate registers for transactions (account registers) and their splits (transaction registers). When viewing an account register, you can inspect the splits of individual transactions by selecting the transaction of interest and invoking the ``Display transaction register'' command either via menu or keyboard, as discussed in Section \ref{Account Register Operations}. But sometimes it is useful to see a group of transactions displayed, together with their splits. An example is when you use the Statement Importer (see Section \ref{Statement Importer} to import a credit card statement. The Statement Importer uses ``fuzzy-matching'' techniques to try to assign expense accounts correctly, based on inspection of prior transactions, while trying to ignore small differences in the transaction descriptions. This works well, but not perfectly. Also, there are times when the expense account of a new credit card transaction needs to be different than that of a matching earlier transaction, because circumstances have changed.. It is therefore a good idea to inspect the Statement Importer's expense account assignments, which  means looking at the splits of a possibly large group of transactions. This is cumbersome to do with Newcash itself. Hence the existence of \verb|newcashCompositeRegister|.
+Newcash is designed to provide separate registers for transactions (account registers) and their splits (transaction registers). When viewing an account register, you can inspect the splits of individual transactions by selecting the transaction of interest and invoking the ``Display transaction register'' command either via menu or keyboard, as discussed in Section \ref{Account Register Operations}. But sometimes it is useful to see a group of transactions displayed, together with their splits. 
 
 You invoke this utility at the command line as the usage message indicates:
 \begin{verbatim}
@@ -1131,24 +1131,6 @@ newcashCompositeRegister -c -b 2013-01-01 -e 2013-01-31 \
 \end{verbatim}
 will produce a bar-separated file with the repetive splits referring the American Express account removed. See Figure \ref{Concise Composite Register -- American Express} 
 \graphicsfig{5in}{figures/composite_register_amex.png}{Concise Composite Register -- American Express}{Concise Composite Register -- American Express}{}
-
-\subsection{Statement Importer}
-\label{Statement Importer}
-The Newcash Statement Importer will load transactions provided in OFX format\footnote{From Wikipedia: "Open Financial Exchange (OFX) is a data-stream format for exchanging financial information that evolved from Microsoft's Open Financial Connectivity (OFC) and Intuit's Open Exchange file formats."}. It is most useful for loading credit card transactions and attempting to properly assign the correct Expense account to each transaction. In my experience, it works very well with transactions downloaded from American Express and from Chase.
-
-The primary problem solved by the Importer is the assignment of the correct Expense accounts to the transactions. The method used is to compare each of the incoming transactions with all of the past transactions involving the Liability account for the credit card in question, and using the Expense account of the best match it can find. The matching is done on the transaction's Description field. The difficulty is that the credit card companies are not particularly careful to insure that repeated transactions involving the same vendor will be described identically, so a simple string comparison will not work. Instead, I used a ``fuzzy'' string matching technique, computing what is known as the Levenshtein Distance, to compare incoming transaction descriptions with the descriptions of past transactions. This works well, but it is not fool-proof and you will need to inspect the assigned Expense accounts after running the Importer, manually correcting those that need attention. I have found the \verb|newcashCompositeRegister| tool invaluable for doing this checking. See Section 
-\ref{Composite Register}.
-
-To run the Importer, issue the command
-\begin{verbatim}
-newcashStatementImporter <path-to-statement> <path-to-Newcash-database>
-\end{verbatim}
-
-For example, if the downloaded statement resides in \verb|/tmp/amex.ofx| and your Newcash database is in \verb|~/Finances/Finances.newcash|, then the command
-\begin{verbatim}
-newcashStatementImporter /tmp/amex.ofx ~/Finances/Finances.newcash
-\end{verbatim}
-will load the downloaded transactions.
 
 \subsection{Verifier}
 As mentioned earlier, your Newcash data is stored in a Sqlite database. The database has a very specific form,  with prescribed inter-relationships among data items. The Newcash application itself does incremental checking of the user's actions
