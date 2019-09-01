@@ -412,10 +412,13 @@ The Rust version has been tested on the Arch, Debian, Ubuntu and MX Linux distri
 of Busybox and an alternative C library, Musl). Rust is also available on FreeBSD and I would expect the Rust version to work properly. Rust is also available as a package on DragonFlyBSD, but the version of the toolchain is usually behind
 the current version. 
 
-If you prefer to use the C version, it is available in the \verb|donaldcallen/newcash_c| repository at github. Understand that I am no longer adding features to the C version (though, truth be told, 
+If you prefer to use the C version, it is available in the
+\begin{verbatim}
+donaldcallen/newcash_c
+\end{verbatim}
+repository at github. Understand that I am no longer adding features to the C version (though, truth be told, 
 I don't anticipate many additions to the Rust version either; after five years of managing my own finances with Newcash, it has long since reached the point where it has everything
-I need), though if a bug comes to my attention, I will fix it. Nonetheless, I recommend that you only use the C version if you are running an OS for which Rust is not available. I am using the Rust version for my own financial
-work and it will benefit from any issues I encounter. In addition, while the C version is generally reliable, there have been some unexplained crashes over the years that I have not been able to reproduce and, therefore, debug.
+I need), though if a bug comes to my attention, I will fix it. Also, the C version on github is, at this writing, a couple of years old. Its development stopped when I turned my attention to Rust. Therefore, I recommend that you only use the C version if you are running an OS for which Rust is not available. I am using the Rust version for managing my own finances and it will benefit from any issues I encounter or enhancements I might make. In addition, while the C version is generally reliable, there have been some unexplained crashes over the years that I have not been able to reproduce and, therefore, debug.
 The Rust language and its compiler, on the other hand, impose a level of rigor on the programmer that is far beyond that of C. Once you have satisfied the Rust compiler by writing code that is free of errors and warnings, you can be certain that your code is
 type-, memory-, and thread-safe. There will be no segmentation faults due to dangling references (references to freed memory) or dereferencing null pointers. There will be no race conditions in multi-threaded code. Any bugs will be in the logic or chosen algorithms.  No such assurances can ever be made about code written in C.
 
