@@ -176,16 +176,16 @@ db eval {
         account_guid text NOT NULL REFERENCES accounts (guid),
         memo text,
         flags integer,
-        value bigint NOT NULL,
-        quantity bigint NOT NULL);
+        value real NOT NULL,
+        quantity real NOT NULL);
     insert into new_splits (guid, tx_guid, account_guid, memo, flags, value, quantity)
         select guid,
             tx_guid,
             account_guid,
             memo,
             ((action='Transfer')*SplitFlagTransferBit)|((reconcile_state='y')*SplitFlagReconciledBit),
-            value_num*MaximumDenominator/value_denom,
-            quantity_num*MaximumDenominator/quantity_denom
+            cast (value_num as real)/cast (value_denom as real),
+            cast (quantity_num as real)/cast (quantity_denom as real)
         from splits;
     drop table splits;
     alter table new_splits rename to splits}

@@ -50,8 +50,8 @@ db eval {CREATE TABLE splits (
 	account_guid text NOT NULL REFERENCES accounts (guid),
 	memo text,
 	flags integer,
-	value bigint NOT NULL,
-	quantity bigint NOT NULL)}
+	value real NOT NULL,
+	quantity real NOT NULL)}
 db eval {CREATE TABLE commodities (
 	guid text PRIMARY KEY NOT NULL,
 	mnemonic text NOT NULL,
