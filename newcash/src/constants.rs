@@ -22,6 +22,7 @@ use gtk::{
     ComboBoxText, Entry, ListStore, ScrolledWindow, TreePath, TreeStore, TreeView, Type, Window,
 };
 use regex::Regex;
+use rusqlite::Connection;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -51,6 +52,7 @@ pub struct Globals {
     pub accounts_view: TreeView,
     pub accounts_window: Window,
     pub book_name: String,
+    pub db: Connection,
     pub db_path: String,
     pub guid_processed: RefCell<HashSet<String>>,
     pub guid_to_full_path: RefCell<HashMap<String, String>>,

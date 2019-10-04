@@ -31,27 +31,9 @@ macro_rules! constants {
 }
 
 #[macro_export]
-macro_rules! cache_statement_locally {
-    ($sql:expr) => {
-        unsafe {
-            static mut STATEMENT: Option<Statement<'static>> = None;
-            if STATEMENT.is_none() {
-                STATEMENT = Some((&DB).prepare($sql).unwrap());
-            };
-            STATEMENT.as_mut().unwrap()
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! cache_statement_globally {
-    ($sql:expr, $stmt:expr) => {
-        unsafe {
-            if $stmt.is_none() {
-                $stmt = Some((&DB).prepare($sql).unwrap());
-            };
-            $stmt.as_mut().unwrap()
-        }
+macro_rules! prepare_statement {
+    ($sql:expr, $globals:ident) => {
+        &mut $globals.db.prepare_cached($sql).unwrap();
     };
 }
 

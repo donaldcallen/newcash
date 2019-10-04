@@ -17,8 +17,6 @@
 
 extern crate gdk;
 extern crate gtk;
-#[macro_use]
-extern crate lazy_mut;
 extern crate regex;
 extern crate rusqlite;
 #[macro_use]
@@ -55,7 +53,6 @@ use gtk::{
     TreeView, TreeViewColumnExt, TreeViewExt, Type, WidgetExt, Window, WindowType, NONE_ADJUSTMENT,
 };
 use queries::{BASIC_INFO_SQL, UNBALANCED_TRANSACTIONS_SQL};
-use rusqlite::Statement;
 use rusqlite::{params, Connection, LoadExtensionGuard};
 use rust_library::constants::{
     ACCOUNT_FLAG_DESCENDENTS_ARE_ASSETS, ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE,
@@ -78,14 +75,6 @@ const EXTENSIONS_LIBRARY_FILE_INDEX: usize = 1;
 const DB_PATH_INDEX: usize = EXTENSIONS_LIBRARY_FILE_INDEX + 1;
 const N_ARGS: usize = DB_PATH_INDEX + 1;
 
-// Globals
-lazy_mut! {
-    static mut DB:Connection = Connection::open(env::args().nth(DB_PATH_INDEX).unwrap()).unwrap();
-}
-static mut INHERITED_P_STMT: Option<Statement> = None;
-static mut GUID_TO_PATH_STMT: Option<Statement> = None;
-static mut NEW_UUID_STMT: Option<Statement> = None;
-
 fn main() {
     let actual_arg_count = env::args().count();
     // Check that the number of arguments is correct
@@ -97,24 +86,11 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
         );
     }
 
-    // Open the database
-    unsafe {
-        DB.init();
-    }
     let db_path = env::args().nth(DB_PATH_INDEX).unwrap();
-
-    // Load sqlite extensions, so we have math functions
-    let unix_extensions_file_path = env::args().nth(EXTENSIONS_LIBRARY_FILE_INDEX).unwrap();
-    let extensions_file_path = Path::new(&unix_extensions_file_path);
-    unsafe {
-        let _guard = LoadExtensionGuard::new(&DB).unwrap();
-        DB.load_extension(extensions_file_path, None).unwrap();
-    }
-
-    let (root_account_guid, book_name, unspecified_account_guid) = unsafe {
-        DB.query_row(BASIC_INFO_SQL, params![], get_result!(string_string_string))
-          .unwrap()
-    };
+    let db = Connection::open(&db_path).unwrap();
+    let (root_account_guid, book_name, unspecified_account_guid) = 
+        db.query_row(BASIC_INFO_SQL, params![], get_result!(string_string_string))
+          .unwrap();
 
     // Initialize gtk
     gtk::init().unwrap();
@@ -142,6 +118,7 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
                                     accounts_view: TreeView::new(),
                                     accounts_window: Window::new(WindowType::Toplevel),
                                     book_name,
+                                    db,
                                     db_path,
                                     guid_processed: RefCell::new(HashSet::new()),
                                     guid_to_full_path: RefCell::new(HashMap::new()),
@@ -150,6 +127,17 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
                                     show_hidden: RefCell::new(false),
                                     transaction_registers: RefCell::new(HashMap::new()),
                                     unspecified_account_guid });
+
+    // Load sqlite extensions, so we have math functions
+    let unix_extensions_file_path = env::args().nth(EXTENSIONS_LIBRARY_FILE_INDEX).unwrap();
+    let extensions_file_path = Path::new(&unix_extensions_file_path);
+    {
+        let _guard = LoadExtensionGuard::new(&globals.db).unwrap();
+        &globals.db.load_extension(extensions_file_path, None).unwrap();
+    }
+
+    // Set rusqlite cache capacity
+    &globals.db.set_prepared_statement_cache_capacity(200);
 
     // Create the accounts window
     let accounts_renderer = CellRendererText::new();
@@ -204,7 +192,7 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
                                for transaction_register in
                                    globals_delete_event.transaction_registers.borrow().values()
                                {
-                                   if cache_statement_locally!(UNBALANCED_TRANSACTIONS_SQL)
+                                   if prepare_statement!(UNBALANCED_TRANSACTIONS_SQL, globals_delete_event)
                 .query_row(params![&*transaction_register.guid], get_result!(f64))
                 .unwrap()
                 > EPSILON
@@ -281,15 +269,15 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
                    let path: String;
                    {
                        let inherited_p_stmt =
-                           cache_statement_globally!(INHERITED_P_SQL, INHERITED_P_STMT);
+                           prepare_statement!(INHERITED_P_SQL, globals_row_activated);
                        marketable_p = inherited_p(inherited_p_stmt,
                                                   &account_guid,
                                                   ACCOUNT_FLAG_DESCENDENTS_ARE_ASSETS)
                                       && inherited_p(inherited_p_stmt,
                                                      &account_guid,
                                                      ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE);
-                       path = guid_to_path(cache_statement_globally!(GUID_TO_PATH_SQL,
-                                                                     GUID_TO_PATH_STMT),
+                       path = guid_to_path(prepare_statement!(GUID_TO_PATH_SQL,
+                                                                     globals_row_activated),
                                            &account_guid);
                    }
                    create_account_register(account_guid,

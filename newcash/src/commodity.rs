@@ -35,14 +35,12 @@ use queries::{
     QUOTE_TIMESTAMP_TO_FIRST_OF_MONTH_SQL, QUOTE_TIMESTAMP_TO_USER_ENTRY_SQL,
     QUOTE_UPDATE_VALUE_SQL,
 };
-use rusqlite::Statement;
 use std::rc::Rc;
 use utilities::{
     column_index_to_column, create_tree_view_text_column, date_edited, display_message_dialog,
     get_selection_info, get_string_column_via_path, select_first_row,
     update_string_column_via_path,
 };
-use DB;
 
 // Columns placed in the commodity register store
 const STORE_GUID: i32 = 0;
@@ -56,11 +54,11 @@ const VIEW_PRICE: i32 = VIEW_TIMESTAMP + 1;
 const COMMODITY_WINDOW_HEIGHT: i32 = 300;
 const COMMODITY_WINDOW_WIDTH: i32 = 300;
 
-fn refresh_commodity_register(commodity_register: &CommodityRegister) {
+fn refresh_commodity_register(commodity_register: &CommodityRegister, globals: &Globals) {
     let view = &commodity_register.core.view;
     // Clear the store
     commodity_register.store.clear();
-    populate_commodity_register_store(commodity_register);
+    populate_commodity_register_store(commodity_register, globals);
 
     select_first_row(view, &column_index_to_column(view, VIEW_PRICE));
 }
@@ -68,10 +66,10 @@ fn refresh_commodity_register(commodity_register: &CommodityRegister) {
 fn delete_quote(commodity_register: &CommodityRegister, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&commodity_register.core, globals) {
         let quote_guid: String = model.get_value(&iter, STORE_GUID).get().unwrap();
-        cache_statement_locally!(DELETE_QUOTE_SQL).execute(params![quote_guid])
+        prepare_statement!(DELETE_QUOTE_SQL, globals).execute(params![quote_guid])
                                                   .unwrap();
         // And refresh the commodity register, so we can see the change
-        refresh_commodity_register(&commodity_register);
+        refresh_commodity_register(&commodity_register, globals);
     }
 }
 
@@ -79,25 +77,25 @@ fn delete_quote(commodity_register: &CommodityRegister, globals: &Globals) {
 fn display_calendar_for_quote(commodity_register: &CommodityRegister, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&commodity_register.core, globals) {
         let current_date: String = model.get_value(&iter, STORE_TIMESTAMP).get().unwrap();
-        if let Some(new_date) = display_calendar(&current_date, &commodity_register.core.window) {
+        if let Some(new_date) = display_calendar(&current_date, &commodity_register.core.window, globals) {
             let quote_guid: String = model.get_value(&iter, STORE_GUID).get().unwrap();
             date_edited(&quote_guid,
-                        cache_statement_locally!(QUOTE_INCREMENT_TIMESTAMP_SQL),
-                        cache_statement_locally!(QUOTE_TIMESTAMP_TO_FIRST_OF_MONTH_SQL),
-                        cache_statement_locally!(QUOTE_TIMESTAMP_TO_END_OF_MONTH_SQL),
-                        cache_statement_locally!(QUOTE_TIMESTAMP_TODAY_SQL),
-                        cache_statement_locally!(QUOTE_TIMESTAMP_TO_USER_ENTRY_SQL),
+                        prepare_statement!(QUOTE_INCREMENT_TIMESTAMP_SQL, globals),
+                        prepare_statement!(QUOTE_TIMESTAMP_TO_FIRST_OF_MONTH_SQL, globals),
+                        prepare_statement!(QUOTE_TIMESTAMP_TO_END_OF_MONTH_SQL, globals),
+                        prepare_statement!(QUOTE_TIMESTAMP_TODAY_SQL, globals),
+                        prepare_statement!(QUOTE_TIMESTAMP_TO_USER_ENTRY_SQL, globals),
                         &new_date,
                         &globals);
-            refresh_commodity_register(commodity_register);
+            refresh_commodity_register(commodity_register, globals);
         }
     }
 }
 
-fn new_quote(commodity_register: &CommodityRegister) {
-    cache_statement_locally!(NEW_QUOTE_SQL).execute(params![commodity_register.guid])
+fn new_quote(commodity_register: &CommodityRegister, globals: &Globals) {
+    prepare_statement!(NEW_QUOTE_SQL, globals).execute(params![commodity_register.guid])
                                            .unwrap();
-    refresh_commodity_register(&commodity_register);
+    refresh_commodity_register(&commodity_register, globals);
 }
 
 // Called when value field is edited
@@ -109,7 +107,7 @@ fn value_field_edited(path: &TreePath, store_index: i32, new_value: &str,
     // Check to be sure the new value the user typed is numeric
     if let Ok(parsed_value) = new_value.parse::<f64>() {
         // Update the database
-        cache_statement_locally!(QUOTE_UPDATE_VALUE_SQL).execute(params![parsed_value,
+        prepare_statement!(QUOTE_UPDATE_VALUE_SQL, globals).execute(params![parsed_value,
                                                                          commodity_guid])
                                                         .unwrap();
 
@@ -122,11 +120,12 @@ fn value_field_edited(path: &TreePath, store_index: i32, new_value: &str,
     }
 }
 
-fn populate_commodity_register_store(commodity_register: &CommodityRegister) {
+fn populate_commodity_register_store(commodity_register: &CommodityRegister, globals: &Globals) {
     let store = &commodity_register.store;
     // Set up the query that fetches price data to produce the register.
+    let stmt = prepare_statement!(PRICES_SQL, globals);
     let prices_iter =
-        cache_statement_locally!(PRICES_SQL).query_map(params![commodity_register.guid],
+        stmt.query_map(params![commodity_register.guid],
                                                        get_result!(string_string_f64))
                                             .unwrap();
     for wrapped_result in prices_iter {
@@ -165,7 +164,7 @@ pub fn create_commodity_register(commodity_guid: String, commodity_name: &str,
     let scrolled_window = &commodity_register.scrolled_window;
 
     // Populate the model/store
-    populate_commodity_register_store(&commodity_register);
+    populate_commodity_register_store(&commodity_register, globals);
 
     // Column setup
     // Timestamp
@@ -182,14 +181,14 @@ pub fn create_commodity_register(commodity_guid: String, commodity_name: &str,
                                                    &path,
                                                    STORE_GUID);
                     date_edited(&guid,
-                                cache_statement_locally!(QUOTE_INCREMENT_TIMESTAMP_SQL),
-                                cache_statement_locally!(QUOTE_TIMESTAMP_TO_FIRST_OF_MONTH_SQL),
-                                cache_statement_locally!(QUOTE_TIMESTAMP_TO_END_OF_MONTH_SQL),
-                                cache_statement_locally!(QUOTE_TIMESTAMP_TODAY_SQL),
-                                cache_statement_locally!(QUOTE_TIMESTAMP_TO_USER_ENTRY_SQL),
+                                prepare_statement!(QUOTE_INCREMENT_TIMESTAMP_SQL, closure_globals),
+                                prepare_statement!(QUOTE_TIMESTAMP_TO_FIRST_OF_MONTH_SQL, closure_globals),
+                                prepare_statement!(QUOTE_TIMESTAMP_TO_END_OF_MONTH_SQL, closure_globals),
+                                prepare_statement!(QUOTE_TIMESTAMP_TODAY_SQL, closure_globals),
+                                prepare_statement!(QUOTE_TIMESTAMP_TO_USER_ENTRY_SQL, closure_globals),
                                 &new_timestamp,
                                 &closure_globals);
-                    refresh_commodity_register(&closure_commodity_register);
+                    refresh_commodity_register(&closure_commodity_register, &closure_globals);
                 });
         // Add column to the view
         let column: TreeViewColumn =
@@ -223,9 +222,10 @@ pub fn create_commodity_register(commodity_guid: String, commodity_name: &str,
     {
         let commodity_register_menu_item = MenuItem::new_with_label("New quote (ctrl-n)");
         let closure_commodity_register = commodity_register.clone();
+        let closure_globals = globals.clone();
         commodity_register_menu_item.connect_activate(
             move |_commodity_register_menu_item: &MenuItem| {
-                new_quote(&closure_commodity_register);
+                new_quote(&closure_commodity_register, &closure_globals);
             },
         );
         commodity_register_menu.append(&commodity_register_menu_item);
@@ -278,7 +278,7 @@ pub fn create_commodity_register(commodity_guid: String, commodity_name: &str,
             if masked_state == ModifierType::CONTROL_MASK.bits() {
                 match event_key.get_keyval() {
                     key::n => {
-                        new_quote(&commodity_register_key_press_event);
+                        new_quote(&commodity_register_key_press_event, &globals_key_press_event);
                         Inhibit(true)
                     }
                     key::a => {

@@ -56,7 +56,6 @@ use utilities::{
     select_first_row, select_last_row, select_row_by_guid, update_boolean_column_via_path,
     update_string_column_via_path,
 };
-use {DB, GUID_TO_PATH_STMT, INHERITED_P_STMT, NEW_UUID_STMT};
 
 // Transaction register view columns
 const VIEW_FULL_ACCOUNT_NAME: i32 = 0;
@@ -105,10 +104,10 @@ fn new_split(transaction_register: &TransactionRegister, globals: &Globals) {
     // Once this is complete, we will update the transaction register
     // with the new split selected. We will also scroll to it.
     let new_split_guid =
-        cache_statement_globally!(NEW_UUID_SQL, NEW_UUID_STMT).query_row(params![],
+        prepare_statement!(NEW_UUID_SQL, globals).query_row(params![],
                                                                          get_result!(string))
                                                               .unwrap();
-    cache_statement_locally!(NEW_SPLIT_SQL).execute(params![new_split_guid,
+    prepare_statement!(NEW_SPLIT_SQL, globals).execute(params![new_split_guid,
                                                             transaction_register.guid,
                                                             globals.unspecified_account_guid])
                                            .unwrap();
@@ -124,11 +123,11 @@ fn duplicate_split(transaction_register: &TransactionRegister, globals: &Globals
         let view = &transaction_register.core.view;
         let source_split_guid: String = model.get_value(&iter, STORE_SPLIT_GUID).get().unwrap();
         let destination_split_guid =
-            cache_statement_globally!(NEW_UUID_SQL, NEW_UUID_STMT).query_row(params![],
+            prepare_statement!(NEW_UUID_SQL, globals).query_row(params![],
                                                                              get_result!(string))
                                                                   .unwrap();
         // Create the new split
-        cache_statement_locally!(DUPLICATE_SPLIT_SQL).execute(params![destination_split_guid,
+        prepare_statement!(DUPLICATE_SPLIT_SQL, globals).execute(params![destination_split_guid,
                                                                       source_split_guid])
                                                      .unwrap();
         refresh_transaction_registers(&TransactionChanged, &transaction_register.guid, globals);
@@ -145,7 +144,7 @@ fn delete_split(transaction_register: &TransactionRegister, globals: &Globals) {
         let n_rows: usize = model.iter_n_children(None) as usize;
         let view = &transaction_register.core.view;
         let split_guid: String = model.get_value(&iter, STORE_SPLIT_GUID).get().unwrap();
-        cache_statement_locally!(DELETE_SPLIT_SQL).execute(params![split_guid])
+        prepare_statement!(DELETE_SPLIT_SQL, globals).execute(params![split_guid])
                                                   .unwrap();
         refresh_transaction_registers(&TransactionChanged, &transaction_register.guid, globals);
         refresh_account_registers(None, Some(&transaction_register.guid), globals);
@@ -163,7 +162,7 @@ fn balance_transaction(transaction_register: &TransactionRegister, globals: &Glo
     if let Some((model, iter)) = get_selection_info(&transaction_register.core, globals) {
         let view = &transaction_register.core.view;
         let split_guid: String = model.get_value(&iter, STORE_SPLIT_GUID).get().unwrap();
-        cache_statement_locally!(BALANCE_TRANSACTION_SQL)
+        prepare_statement!(BALANCE_TRANSACTION_SQL, globals)
             .execute(params![transaction_register.guid, &split_guid])
             .unwrap();
         refresh_transaction_registers(&TransactionChanged, &transaction_register.guid, globals);
@@ -180,9 +179,9 @@ fn reverse_sign(transaction_register: &TransactionRegister, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&transaction_register.core, globals) {
         let view = &transaction_register.core.view;
         let split_guid: String = model.get_value(&iter, STORE_SPLIT_GUID).get().unwrap();
-        cache_statement_locally!(REVERSE_SIGN_SQL).execute(params![split_guid])
+        prepare_statement!(REVERSE_SIGN_SQL, globals).execute(params![split_guid])
                                                   .unwrap();
-        update_balancing_split(&transaction_register, &split_guid);
+        update_balancing_split(&transaction_register, &split_guid, globals);
         refresh_transaction_registers(&TransactionChanged, &transaction_register.guid, globals);
         select_row_by_guid(view,
                            &split_guid,
@@ -197,8 +196,8 @@ fn copy_split_account_path_to_clipboard(transaction_register: &TransactionRegist
                                         globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&transaction_register.core, globals) {
         let split_account_guid: String = model.get_value(&iter, STORE_ACCOUNT_GUID).get().unwrap();
-        let full_split_account_path = guid_to_path(cache_statement_globally!(GUID_TO_PATH_SQL,
-                                                                             GUID_TO_PATH_STMT),
+        let full_split_account_path = guid_to_path(prepare_statement!(GUID_TO_PATH_SQL,
+                                                                             globals),
                                                    split_account_guid.as_str());
         Clipboard::get(&Atom::intern("CLIPBOARD")).set_text(full_split_account_path.as_str());
     }
@@ -216,7 +215,7 @@ fn paste_split_account(transaction_register: &TransactionRegister, globals: &Glo
     if let Some(account_copy_buffer) = (*globals.account_copy_buffer.borrow()).as_ref() {
         if let Some((model, iter)) = get_selection_info(&transaction_register.core, &globals) {
             let split_guid: String = model.get_value(&iter, STORE_SPLIT_GUID).get().unwrap();
-            cache_statement_locally!(PASTE_ACCOUNT_GUID_SQL).execute(&[account_copy_buffer,
+            prepare_statement!(PASTE_ACCOUNT_GUID_SQL, globals).execute(&[account_copy_buffer,
                                                                        &split_guid])
                                                             .unwrap();
             refresh_transaction_registers(&SplitEdited, &split_guid, globals);
@@ -232,10 +231,10 @@ fn display_split_account_register(transaction_register: &TransactionRegister,
                                   globals: &Rc<Globals>) {
     if let Some((model, iter)) = get_selection_info(&transaction_register.core, &globals) {
         let account_guid: String = model.get_value(&iter, STORE_ACCOUNT_GUID).get().unwrap();
-        let marketable = inherited_p(cache_statement_globally!(INHERITED_P_SQL, INHERITED_P_STMT),
+        let marketable = inherited_p(prepare_statement!(INHERITED_P_SQL, globals),
                                      &account_guid,
                                      ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE);
-        let path = guid_to_path(cache_statement_globally!(GUID_TO_PATH_SQL, GUID_TO_PATH_STMT),
+        let path = guid_to_path(prepare_statement!(GUID_TO_PATH_SQL, globals),
                                 &account_guid);
         create_account_register(account_guid, marketable, path.as_str(), &globals);
     };
@@ -249,7 +248,7 @@ fn flag_bit_toggled(renderer: &CellRendererToggle, path: &TreePath,
     let split_guid: String = get_string_column_via_path(store, path, STORE_SPLIT_GUID);
 
     // Update the database
-    cache_statement_locally!(sql).execute(params![split_guid])
+    prepare_statement!(sql, globals).execute(params![split_guid])
                                  .unwrap();
     // Update the model and view
     update_boolean_column_via_path(store, path, !renderer.get_active(), store_column_index);
@@ -258,38 +257,40 @@ fn flag_bit_toggled(renderer: &CellRendererToggle, path: &TreePath,
     refresh_account_registers(None, Some(&transaction_register.guid), globals);
 }
 
-fn update_balancing_split(transaction_register: &TransactionRegister, split_guid: &str) {
+fn update_balancing_split(transaction_register: &TransactionRegister, split_guid: &str, globals: &Globals) {
     // The idea here is to check if the transaction identified by the supplied guid has exactly 2 splits and the account of the split
     // other than the one identified by the split guid is not marketable.
     // The reason for avoiding marketable accounts is that if we change the value of the split, what do we do about the quantity?
     // Too complicated. Let the user balance the transaction manually.
     // If the criteria are satisfied, then set the value of the 'other' split to the negative of the supplied split, so that the transaction is now balanced.
     let nrows =
-        cache_statement_locally!(SPLIT_COUNT_SQL).query_row(params![transaction_register.guid],
+        prepare_statement!(SPLIT_COUNT_SQL, globals).query_row(params![transaction_register.guid],
                                                             get_result!(i32))
                                                  .unwrap();
     // Update the value of the balancing split if there are just two splits and the 'other' split is not marketable
     if nrows == 2 {
         // Update the balancing split if its account is not marketable or if it is and a money-market fund
         let (balancing_split_guid, account_guid) =
-            cache_statement_locally!(GET_BALANCING_SPLIT_GUIDS_SQL)
+            prepare_statement!(GET_BALANCING_SPLIT_GUIDS_SQL, globals)
                 .query_row(
                     params![transaction_register.guid, split_guid],
                     get_result!(string_string),
                 )
                 .unwrap();
-        let marketable_p = inherited_p(cache_statement_globally!(INHERITED_P_SQL,
-                                                                 INHERITED_P_STMT),
+        let marketable_p = inherited_p(prepare_statement!(INHERITED_P_SQL,
+                                                                 globals),
                                        &account_guid,
                                        ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE);
+        let update_balancing_money_market_split_stmt = prepare_statement!(UPDATE_BALANCING_MONEY_MARKET_SPLIT_SQL, globals);
+        let update_balancing_split_value_stmt = prepare_statement!(UPDATE_BALANCING_SPLIT_VALUE_SQL, globals);
         let maybe_stmt: Option<&mut Statement> = if marketable_p {
-            if money_market_p(&balancing_split_guid) {
-                Some(cache_statement_locally!(UPDATE_BALANCING_MONEY_MARKET_SPLIT_SQL))
+            if money_market_p(&balancing_split_guid, globals) {
+                Some(update_balancing_money_market_split_stmt)
             } else {
                 None
             }
         } else {
-            Some(cache_statement_locally!(UPDATE_BALANCING_SPLIT_VALUE_SQL))
+            Some(update_balancing_split_value_stmt)
         };
         if let Some(stmt) = maybe_stmt {
             stmt.execute(params![transaction_register.guid, split_guid])
@@ -298,9 +299,9 @@ fn update_balancing_split(transaction_register: &TransactionRegister, split_guid
     }
 }
 
-fn money_market_p(split_guid: &str) -> bool {
+fn money_market_p(split_guid: &str, globals: &Globals) -> bool {
     if let Ok(flags) =
-        cache_statement_locally!(MONEY_MARKET_P_SQL).query_row(&[split_guid], get_result!(i32))
+        prepare_statement!(MONEY_MARKET_P_SQL, globals).query_row(&[split_guid], get_result!(i32))
     {
         (flags & COMMODITY_FLAG_MONEY_MARKET_FUND) == 1
     } else {
@@ -326,11 +327,11 @@ fn value_edited(path: &TreePath, new_value_expression: &str,
     let iter = model.get_iter(path).unwrap();
     let split_guid: String = model.get_value(&iter, STORE_SPLIT_GUID).get().unwrap();
     let split_account_guid: String = model.get_value(&iter, STORE_ACCOUNT_GUID).get().unwrap();
-    let split_shares_p = inherited_p(cache_statement_globally!(INHERITED_P_SQL, INHERITED_P_STMT),
+    let split_shares_p = inherited_p(prepare_statement!(INHERITED_P_SQL, globals),
                                      &split_account_guid,
                                      ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE);
     let new_value: f64 =
-        if let Some(new_value) = evaluate_expression(sanitize(new_value_expression).as_str()) {
+        if let Some(new_value) = evaluate_expression(sanitize(new_value_expression).as_str(), globals) {
             new_value
         } else {
             display_message_dialog("Invalid expression when editing the value field of a split",
@@ -341,8 +342,8 @@ fn value_edited(path: &TreePath, new_value_expression: &str,
     // Is the split account marketable?
     if split_shares_p {
         // Is it a money market account? If so, we can process, because we know that quantity = value.
-        if money_market_p(&split_guid) {
-            cache_statement_locally!(UPDATE_MONEY_MARKET_VALUE_QUANTITY_SQL)
+        if money_market_p(&split_guid, globals) {
+            prepare_statement!(UPDATE_MONEY_MARKET_VALUE_QUANTITY_SQL, globals)
                 .execute(params![new_value, split_guid])
                 .unwrap();
         } else {
@@ -367,10 +368,10 @@ edit this split.",
             return;
         }
     } else {
-        cache_statement_locally!(UPDATE_VALUE_SQL).execute(params![new_value, split_guid])
+        prepare_statement!(UPDATE_VALUE_SQL, globals).execute(params![new_value, split_guid])
                                                   .unwrap();
     }
-    update_balancing_split(&transaction_register, &split_guid);
+    update_balancing_split(&transaction_register, &split_guid, globals);
     refresh_transaction_registers(&SplitEdited, &split_guid, globals);
     select_row_by_guid(view,
                        &split_guid,
@@ -385,7 +386,7 @@ fn shares_value_edited(path: &TreePath, new_value_expression: &str,
     let model: TreeModel = view.get_model().unwrap();
     let split_guid = get_string_column_via_path(&model, path, STORE_SPLIT_GUID);
     let new_value: f64 =
-        if let Some(new_value) = evaluate_expression(sanitize(new_value_expression).as_str()) {
+        if let Some(new_value) = evaluate_expression(sanitize(new_value_expression).as_str(), globals) {
             new_value
         } else {
             display_message_dialog("Invalid expression when editing the value field of a split",
@@ -393,16 +394,16 @@ fn shares_value_edited(path: &TreePath, new_value_expression: &str,
             return;
         };
     // Is this a money-market fund?
-    if money_market_p(&split_guid) {
-        cache_statement_locally!(UPDATE_MONEY_MARKET_VALUE_QUANTITY_SQL)
+    if money_market_p(&split_guid, globals) {
+        prepare_statement!(UPDATE_MONEY_MARKET_VALUE_QUANTITY_SQL, globals)
             .execute(params![new_value, split_guid])
             .unwrap();
     } else {
-        cache_statement_locally!(UPDATE_VALUE_SQL).execute(params![new_value, split_guid])
+        prepare_statement!(UPDATE_VALUE_SQL, globals).execute(params![new_value, split_guid])
                                                   .unwrap();
     };
 
-    update_balancing_split(&transaction_register, &split_guid);
+    update_balancing_split(&transaction_register, &split_guid, globals);
     refresh_transaction_registers(&SplitEdited, &split_guid, globals);
     select_row_by_guid(view,
                        &split_guid,
@@ -417,7 +418,7 @@ fn price_edited(path: &TreePath, new_price_expression: &str,
     let model = view.get_model().unwrap();
     let split_guid = get_string_column_via_path(&model, path, STORE_SPLIT_GUID);
     let new_price: f64 =
-        if let Some(new_price) = evaluate_expression(sanitize(new_price_expression).as_str()) {
+        if let Some(new_price) = evaluate_expression(sanitize(new_price_expression).as_str(), globals) {
             new_price
         } else {
             display_message_dialog("Invalid expression when editing the price field of a split",
@@ -431,19 +432,24 @@ fn price_edited(path: &TreePath, new_price_expression: &str,
     // 3. Both quantity and value are not zero/null. In this case, the user will have to be asked which of the two she wants to change to obtain the desired price.
     // The first step is to test the zero-/null-ness of both quantity and value, so we can determine which case we are dealing with.
     let (quantity_nullzero_ness, value_nullzero_ness) =
-        cache_statement_locally!(PRICE_EDITED_NULL_CHECK_SQL).query_row(params![split_guid],
+        prepare_statement!(PRICE_EDITED_NULL_CHECK_SQL, globals).query_row(params![split_guid],
                                                                         get_result!(bool_bool))
                                                              .unwrap();
-
+    let case_1_stmt = prepare_statement!("update splits set value=?1, quantity = 1.0 where guid = ?2", globals);
+    let case_2a_stmt = prepare_statement!("update splits set quantity=value/(?1) where guid = ?2", globals);
+    let case_2b_stmt = prepare_statement!("update splits set value=quantity*(?1) where guid = ?2", globals);
+    let case_3a_stmt = prepare_statement!("update splits set value=quantity*(?1) where guid = ?2", globals);
+    let case_3b_stmt = prepare_statement!("update splits set \
+                                                  quantity=ifnull(value/(?1),0) where guid = ?2", globals);
     let stmt = if quantity_nullzero_ness && value_nullzero_ness {
         // Case 1.
-        cache_statement_locally!("update splits set value=?1, quantity = 1.0 where guid = ?2")
+        case_1_stmt
     } else if quantity_nullzero_ness {
         // Case 2a. Since price = value/quantity we must set quantity = value/price. Value is already scaled by max denom, so the result will be scaled as well.
-        cache_statement_locally!("update splits set quantity=value/(?1) where guid = ?2")
+        case_2a_stmt
     } else if value_nullzero_ness {
         // Case 2b. Since price = value/quantity we must set value = quantity*price. quantity is already scaled by max denom, so the result will be scaled as well.
-        cache_statement_locally!("update splits set value=quantity*(?1) where guid = ?2")
+        case_2b_stmt
     } else {
         // Case 3. Neither are zero. We have to ask the user which one to change.
         const VALUE: ResponseType = ResponseType::Other(0);
@@ -464,17 +470,14 @@ fn price_edited(path: &TreePath, new_price_expression: &str,
         let result = dialog.run();
         dialog.destroy();
         match result {
-            VALUE => {
-                cache_statement_locally!("update splits set value=quantity*(?1) where guid = ?2")
-            }
-            QUANTITY => cache_statement_locally!("update splits set \
-                                                  quantity=ifnull(value/(?1),0) where guid = ?2"),
+            VALUE => case_3a_stmt,
+            QUANTITY => case_3b_stmt,
             _ => return, // User probably changed her mind and hit escape. Do nothing.
         }
     };
 
     stmt.execute(params![new_price, split_guid]).unwrap();
-    update_balancing_split(&transaction_register, &split_guid);
+    update_balancing_split(&transaction_register, &split_guid, globals);
     refresh_transaction_registers(&SplitEdited, &split_guid, globals);
     select_row_by_guid(view,
                        &split_guid,
@@ -490,7 +493,7 @@ fn quantity_edited(path: &TreePath, new_quantity_expression: &str,
     let model = view.get_model().unwrap();
     let split_guid = get_string_column_via_path(&model, path, STORE_SPLIT_GUID);
     let new_quantity: f64 = if let Some(new_quantity) =
-        evaluate_expression(sanitize(new_quantity_expression).as_str())
+        evaluate_expression(sanitize(new_quantity_expression).as_str(), globals)
     {
         new_quantity
     } else {
@@ -498,15 +501,15 @@ fn quantity_edited(path: &TreePath, new_quantity_expression: &str,
                                globals);
         return;
     };
-    if money_market_p(&split_guid) {
-        cache_statement_locally!(UPDATE_MONEY_MARKET_VALUE_QUANTITY_SQL)
+    if money_market_p(&split_guid, globals) {
+        prepare_statement!(UPDATE_MONEY_MARKET_VALUE_QUANTITY_SQL, globals)
             .execute(params![new_quantity, split_guid])
             .unwrap();
     } else {
-        cache_statement_locally!(UPDATE_QUANTITY_SQL).execute(params![new_quantity, split_guid])
+        prepare_statement!(UPDATE_QUANTITY_SQL, globals).execute(params![new_quantity, split_guid])
                                                      .unwrap();
     };
-    update_balancing_split(transaction_register, &split_guid);
+    update_balancing_split(transaction_register, &split_guid, globals);
     refresh_transaction_registers(&SplitEdited, &split_guid, globals);
     select_row_by_guid(view,
                        &split_guid,
@@ -524,7 +527,7 @@ fn quantity_edited(path: &TreePath, new_quantity_expression: &str,
 // are affected are refreshed; the rest are left as they are.
 pub fn refresh_transaction_registers(reason: &WhatChanged, guid: &str, globals: &Globals) {
     fn refresh_transaction_register(transaction_register: &TransactionRegister,
-                                    reason: &WhatChanged, guid: &str) {
+                                    reason: &WhatChanged, guid: &str, globals: &Globals) {
         let view = &transaction_register.core.view;
         let column_index: i32 = match reason {
             AccountNameChanged => STORE_ACCOUNT_GUID,
@@ -539,7 +542,7 @@ pub fn refresh_transaction_registers(reason: &WhatChanged, guid: &str, globals: 
                 // This register needs refreshing
                 // Clear the store
                 transaction_register.store.clear();
-                populate_transaction_register_store(&transaction_register);
+                populate_transaction_register_store(&transaction_register, globals);
                 select_row_by_guid(view,
                                    guid,
                                    column_index,
@@ -552,7 +555,7 @@ pub fn refresh_transaction_registers(reason: &WhatChanged, guid: &str, globals: 
         }
     }
     for transaction_register in globals.transaction_registers.borrow().values() {
-        refresh_transaction_register(transaction_register, reason, guid);
+        refresh_transaction_register(transaction_register, reason, guid, globals);
     }
 }
 
@@ -564,7 +567,7 @@ fn memo_edited(path: &TreePath, new_memo: &str, transaction_register: &Transacti
 
     // Update the database
     let temp = new_memo.to_string();
-    cache_statement_locally!(UPDATE_MEMO_SQL).execute(params![temp, split_guid])
+    prepare_statement!(UPDATE_MEMO_SQL, globals).execute(params![temp, split_guid])
                                              .unwrap();
     // Write new value to store
     update_string_column_via_path(&transaction_register.store, path, new_memo, STORE_MEMO);
@@ -572,12 +575,13 @@ fn memo_edited(path: &TreePath, new_memo: &str, transaction_register: &Transacti
     refresh_transaction_registers(&SplitEdited, &transaction_register.guid, &globals);
 }
 
-fn populate_transaction_register_store(transaction_register: &TransactionRegister) {
+fn populate_transaction_register_store(transaction_register: &TransactionRegister, globals: &Globals) {
     let mut balance: f64 = 0.;
     let store = &transaction_register.store;
     // Set up the query that fetches the splits to produce the transaction register.
     if transaction_register.account_register.shares_p {
-        let row_iter = cache_statement_locally!(MARKETABLE_TRANSACTION_REGISTER_SQL)
+        let stmt = prepare_statement!(MARKETABLE_TRANSACTION_REGISTER_SQL, globals);
+        let row_iter = stmt
             .query_map(
                 params![transaction_register.guid],
                 |row| -> Result<(String, String, String, i32, f64, f64), rusqlite::Error> {
@@ -594,14 +598,14 @@ fn populate_transaction_register_store(transaction_register: &TransactionRegiste
             .unwrap();
         for wrapped_result in row_iter {
             let (account_guid, split_guid, memo, flags, value, quantity) = wrapped_result.unwrap();
-            let full_account_path = guid_to_path(cache_statement_globally!(GUID_TO_PATH_SQL,
-                                                                           GUID_TO_PATH_STMT),
+            let full_account_path = guid_to_path(prepare_statement!(GUID_TO_PATH_SQL,
+                                                                           globals),
                                                  &account_guid);
 
             // Append an empty row to the list store. Iter will point to the new row
             let iter = store.append();
             balance += value;
-            let split_adjusted_quantity = quantity * get_split_factor(&split_guid);
+            let split_adjusted_quantity = quantity * get_split_factor(&split_guid, globals);
             let value_string = format!("{:.*}", 2, value);
             let balance_string = format!("{:.*}", 2, balance);
             let (price_string, quantity_string) = if split_adjusted_quantity != 0. {
@@ -638,7 +642,8 @@ fn populate_transaction_register_store(transaction_register: &TransactionRegiste
                         &transfer_p]);
         }
     } else {
-        let row_iter = cache_statement_locally!(NON_MARKETABLE_TRANSACTION_REGISTER_SQL)
+        let stmt = prepare_statement!(NON_MARKETABLE_TRANSACTION_REGISTER_SQL, globals);
+        let row_iter = stmt
             .query_map(
                 params![transaction_register.guid],
                 |row| -> Result<(String, String, String, i32, f64), rusqlite::Error> {
@@ -655,8 +660,8 @@ fn populate_transaction_register_store(transaction_register: &TransactionRegiste
 
         for wrapped_result in row_iter {
             let (account_guid, split_guid, memo, flags, value) = wrapped_result.unwrap();
-            let full_account_path = guid_to_path(cache_statement_globally!(GUID_TO_PATH_SQL,
-                                                                           GUID_TO_PATH_STMT),
+            let full_account_path = guid_to_path(prepare_statement!(GUID_TO_PATH_SQL,
+                                                                           globals),
                                                  &account_guid);
 
             // Append an empty row to the list store. Iter will point to the new row
@@ -750,7 +755,7 @@ pub fn create_transaction_register(transaction_guid: String, description: String
         view.set_model(Some(store));
 
         // Populate the model/store
-        populate_transaction_register_store(&transaction_register);
+        populate_transaction_register_store(&transaction_register, &globals);
 
         // Column setup
         // Account
@@ -1143,7 +1148,7 @@ pub fn create_transaction_register(transaction_guid: String, description: String
         let globals_delete_event = globals.clone();
         let transaction_register_delete_event = transaction_register.clone();
         window.connect_delete_event(move |_, _| {
-                  let mut stmt = unsafe { DB.prepare(CHECK_TRANSACTION_BALANCE_SQL) }.unwrap();
+                  let mut stmt =  globals_delete_event.db.prepare(CHECK_TRANSACTION_BALANCE_SQL).unwrap();
                   let balance: f64 =
                       stmt.query_row(params![(&*transaction_register_delete_event.guid)],
                                      get_result!(f64))

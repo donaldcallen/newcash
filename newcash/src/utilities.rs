@@ -28,18 +28,17 @@ use regex::Regex;
 use rusqlite::{params, Statement};
 use std::cell::RefCell;
 use std::convert::TryInto;
-use DB;
 
 // expression is either a number or a numeric expression. If it's just a number, parse should give us the value.
 // If not, evaluate the expression with a query
-pub fn evaluate_expression(expression: &str) -> Option<f64> {
+pub fn evaluate_expression(expression: &str, globals: &Globals) -> Option<f64> {
     let maybe_result = expression.parse::<f64>();
     if let Ok(result) = maybe_result {
         Some(result)
     } else {
         let sql = format!("select {}", expression);
-        let mut maybe_stmt = unsafe { (&DB).prepare(sql.as_str()) };
-        if let Ok(stmt) = &mut maybe_stmt {
+        let mut maybe_stmt = (&(globals.db)).prepare(sql.as_str());
+        if let Ok(ref mut stmt) = maybe_stmt {
             Some(stmt.query_row(params![], get_result!(f64)).unwrap())
         } else {
             None
@@ -75,8 +74,8 @@ pub fn maybe_date_increment(trimmed_new_date: &str) -> Option<i32> {
 }
 
 // This function checks the 'date' argument to see if it is valid ISO-8601 format
-pub fn maybe_date(date: &str) -> bool {
-    cache_statement_locally!("select julianday(?1)")
+pub fn maybe_date(date: &str, globals: &Globals) -> bool {
+    prepare_statement!("select julianday(?1)", globals)
         .query_row(
             params![date.to_string()],
             |row| -> Result<f64, rusqlite::Error> { row.get(0) },
@@ -107,7 +106,7 @@ pub fn date_edited(guid: &str, increment_stmt: &mut Statement,
             }
             _ => display_message_dialog(DATE_ERROR_MESSAGE, globals),
         }
-    } else if maybe_date(trimmed_new_date) {
+    } else if maybe_date(trimmed_new_date, globals) {
         // Did the user provide a date?
         user_entry_stmt.execute(params![(trimmed_new_date.to_string()), guid])
                        .unwrap();

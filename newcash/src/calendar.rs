@@ -15,13 +15,14 @@
 // You have received a copy of the GNU General Public License
 // along with the Newcash Suite.  It is also available at <http://www.gnu.org/licenses/>.
 
+use constants::Globals;
 use gtk::{
     Calendar, CalendarExt, ContainerExt, Dialog, DialogExt, DialogFlags, ResponseType, WidgetExt,
     Window,
 };
 use utilities::maybe_date;
 
-pub fn display_calendar(initial_date: &str, parent_window: &Window) -> Option<String> {
+pub fn display_calendar(initial_date: &str, parent_window: &Window, globals:&Globals) -> Option<String> {
     let calendar = Calendar::new();
     let dialog = Dialog::new_with_buttons(Some("Select date"),
                                           Some(parent_window),
@@ -33,7 +34,7 @@ pub fn display_calendar(initial_date: &str, parent_window: &Window) -> Option<St
 
     // Set calendar to the date currently in the selected row, if there is one
     // and it is in ISO-8601 format
-    if !initial_date.is_empty() && maybe_date(initial_date) {
+    if !initial_date.is_empty() && maybe_date(initial_date, globals) {
         // Split the date into its components as strings
         let split_date: Vec<&str> = initial_date.split('-').collect();
         // And convert to u32s

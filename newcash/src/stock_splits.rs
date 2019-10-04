@@ -35,14 +35,12 @@ use queries::{
     STOCK_SPLIT_DATE_TO_FIRST_OF_MONTH_SQL, STOCK_SPLIT_DATE_TO_USER_ENTRY_SQL,
     STOCK_SPLIT_INCREMENT_DATE_SQL, UPDATE_SPLIT_FACTOR_SQL,
 };
-use rusqlite::Statement;
 use std::rc::Rc;
 use utilities::{
     column_index_to_column, create_tree_view_text_column, date_edited, display_message_dialog,
     get_selection_info, get_string_column_via_path, select_first_row, select_row,
     update_string_column_via_path,
 };
-use DB;
 
 // Columns in the stock splits store
 const STORE_GUID: i32 = 0;
@@ -58,12 +56,12 @@ const VIEW_TOTAL_FACTOR: i32 = 2;
 const STOCK_SPLITS_WINDOW_HEIGHT: i32 = 80;
 const STOCK_SPLITS_WINDOW_WIDTH: i32 = 400;
 
-pub fn get_split_factor(split_guid: &str) -> f64 {
-    cache_statement_locally!(GET_SPLIT_FACTOR_SQL).query_row(params![split_guid], get_result!(f64))
+pub fn get_split_factor(split_guid: &str, globals:&Globals) -> f64 {
+    prepare_statement!(GET_SPLIT_FACTOR_SQL, globals).query_row(params![split_guid], get_result!(f64))
                                                   .unwrap()
 }
 
-fn refresh_stock_splits_register(stock_splits_register: &StockSplitsRegister) {
+fn refresh_stock_splits_register(stock_splits_register: &StockSplitsRegister, globals:&Globals) {
     let view = &stock_splits_register.core.view;
 
     // Is there a current selection?
@@ -71,14 +69,14 @@ fn refresh_stock_splits_register(stock_splits_register: &StockSplitsRegister) {
         // Turn the iter into a path, since I don't think an iter can be valid after generating a new model
         if let Some(path) = model.get_path(&iter) {
             // Clear and repopulate the model
-            populate_stock_splits_store(&stock_splits_register);
+            populate_stock_splits_store(&stock_splits_register, globals);
 
             // Select something near the previously selected row, if there was one
             select_row(view, &path, &column_index_to_column(view, VIEW_FACTOR));
         }
     } else {
         // Generate a new model for the stock splits view and replace the old one
-        populate_stock_splits_store(stock_splits_register);
+        populate_stock_splits_store(stock_splits_register, globals);
 
         // Select the first row
         select_first_row(view, &column_index_to_column(view, VIEW_FACTOR));
@@ -93,20 +91,20 @@ fn factor_edited(path: &TreePath, new_factor: &str, stock_splits_register: &Stoc
         // Write new value to store
         update_string_column_via_path(store, path, new_factor, STORE_FACTOR);
 
-        cache_statement_locally!(UPDATE_SPLIT_FACTOR_SQL).execute(params![factor,
+        prepare_statement!(UPDATE_SPLIT_FACTOR_SQL, globals).execute(params![factor,
                                                                           stock_split_guid])
                                                          .unwrap();
-        refresh_stock_splits_register(&stock_splits_register);
+        refresh_stock_splits_register(&stock_splits_register, globals);
     } else {
         display_message_dialog("Invalid split factor", globals);
     }
 }
 
-fn new_stock_split(stock_splits_register: &StockSplitsRegister) {
-    cache_statement_locally!(NEW_STOCK_SPLIT_SQL)
+fn new_stock_split(stock_splits_register: &StockSplitsRegister, globals:&Globals) {
+    prepare_statement!(NEW_STOCK_SPLIT_SQL, globals)
         .execute(params![&(*stock_splits_register.commodity_guid)])
         .unwrap();
-    refresh_stock_splits_register(stock_splits_register);
+    refresh_stock_splits_register(stock_splits_register, globals);
 }
 
 fn delete_stock_split(stock_splits_register: &StockSplitsRegister, globals: &Globals) {
@@ -116,9 +114,9 @@ fn delete_stock_split(stock_splits_register: &StockSplitsRegister, globals: &Glo
         if let Some((model, iter)) = view.get_selection().get_selected() {
             let guid: String = model.get_value(&iter, STORE_GUID).get().unwrap();
             // Delete the quote
-            cache_statement_locally!(DELETE_STOCK_SPLIT_SQL).execute(params![guid])
+            prepare_statement!(DELETE_STOCK_SPLIT_SQL, globals).execute(params![guid])
                                                             .unwrap();
-            refresh_stock_splits_register(stock_splits_register);
+            refresh_stock_splits_register(stock_splits_register, globals);
         }
     } else {
         display_message_dialog("Improper selection", globals);
@@ -131,26 +129,26 @@ fn display_calendar_for_stock_split(stock_splits_register: &StockSplitsRegister,
         let current_timestamp: String = model.get_value(&iter, STORE_DATE).get().unwrap();
         let current_date: String = (&(current_timestamp.as_str())[0..DATE_SIZE]).to_string();
 
-        if let Some(new_date) = display_calendar(&current_date, &stock_splits_register.core.window)
+        if let Some(new_date) = display_calendar(&current_date, &stock_splits_register.core.window, globals)
         {
             let guid: String = stock_splits_register.store
                                                     .get_value(&iter, STORE_GUID)
                                                     .get()
                                                     .unwrap();
             date_edited(guid.as_str(),
-                        cache_statement_locally!(STOCK_SPLIT_INCREMENT_DATE_SQL),
-                        cache_statement_locally!(STOCK_SPLIT_DATE_TO_FIRST_OF_MONTH_SQL),
-                        cache_statement_locally!(STOCK_SPLIT_DATE_TO_END_OF_MONTH_SQL),
-                        cache_statement_locally!(STOCK_SPLIT_DATE_TODAY_SQL),
-                        cache_statement_locally!(STOCK_SPLIT_DATE_TO_USER_ENTRY_SQL),
+                        prepare_statement!(STOCK_SPLIT_INCREMENT_DATE_SQL, globals),
+                        prepare_statement!(STOCK_SPLIT_DATE_TO_FIRST_OF_MONTH_SQL, globals),
+                        prepare_statement!(STOCK_SPLIT_DATE_TO_END_OF_MONTH_SQL, globals),
+                        prepare_statement!(STOCK_SPLIT_DATE_TODAY_SQL, globals),
+                        prepare_statement!(STOCK_SPLIT_DATE_TO_USER_ENTRY_SQL, globals),
                         &new_date,
                         &globals)
         }
-        refresh_stock_splits_register(stock_splits_register);
+        refresh_stock_splits_register(stock_splits_register, globals);
     }
 }
 
-fn populate_stock_splits_store(stock_splits_register: &StockSplitsRegister) {
+fn populate_stock_splits_store(stock_splits_register: &StockSplitsRegister, globals:&Globals) {
     let store = &stock_splits_register.store;
 
     // Clear the store
@@ -159,7 +157,8 @@ fn populate_stock_splits_store(stock_splits_register: &StockSplitsRegister) {
     // Fill the store
     let mut total_factor: f64 = 1.0;
     // Get stock split data
-    let stock_splits_iter = cache_statement_locally!(STOCK_SPLITS_REGISTER_SQL)
+    let stmt = prepare_statement!(STOCK_SPLITS_REGISTER_SQL, globals);
+    let stock_splits_iter = stmt
         .query_map(
             params![&(*stock_splits_register.commodity_guid)],
             get_result!(string_string_f64),
@@ -207,7 +206,7 @@ pub fn create_stock_splits_register(commodity_guid: &Rc<String>, fullname: Strin
     let scrolled_window = &stock_splits_register.scrolled_window;
 
     // Populate the model/store
-    populate_stock_splits_store(&stock_splits_register);
+    populate_stock_splits_store(&stock_splits_register, globals);
     // And point the view at it
     view.set_model(Some(store));
 
@@ -226,14 +225,14 @@ pub fn create_stock_splits_register(commodity_guid: &Rc<String>, fullname: Strin
                                                    &path,
                                                    STORE_GUID);
                     date_edited(&quote_guid,
-                                cache_statement_locally!(STOCK_SPLIT_INCREMENT_DATE_SQL),
-                                cache_statement_locally!(STOCK_SPLIT_DATE_TO_FIRST_OF_MONTH_SQL),
-                                cache_statement_locally!(STOCK_SPLIT_DATE_TO_END_OF_MONTH_SQL),
-                                cache_statement_locally!(STOCK_SPLIT_DATE_TODAY_SQL),
-                                cache_statement_locally!(STOCK_SPLIT_DATE_TO_USER_ENTRY_SQL),
+                                prepare_statement!(STOCK_SPLIT_INCREMENT_DATE_SQL, closure_globals),
+                                prepare_statement!(STOCK_SPLIT_DATE_TO_FIRST_OF_MONTH_SQL, closure_globals),
+                                prepare_statement!(STOCK_SPLIT_DATE_TO_END_OF_MONTH_SQL, closure_globals),
+                                prepare_statement!(STOCK_SPLIT_DATE_TODAY_SQL, closure_globals),
+                                prepare_statement!(STOCK_SPLIT_DATE_TO_USER_ENTRY_SQL, closure_globals),
                                 &new_date,
                                 &closure_globals);
-                    refresh_stock_splits_register(&closure_stock_splits_register);
+                    refresh_stock_splits_register(&closure_stock_splits_register, &closure_globals);
                 });
         renderer.set_property_editable(true);
         // Add date column to the view
@@ -290,9 +289,10 @@ pub fn create_stock_splits_register(commodity_guid: &Rc<String>, fullname: Strin
     let stock_splits_menu = Menu::new();
     {
         let stock_splits_menu_item = MenuItem::new_with_label("New stock split (ctrl-n)");
+        let closure_globals = globals.clone();
         let closure_stock_splits_register = stock_splits_register.clone();
         stock_splits_menu_item.connect_activate(move |_stock_splits_menu_item: &MenuItem| {
-                                  new_stock_split(&closure_stock_splits_register);
+                                  new_stock_split(&closure_stock_splits_register, &closure_globals);
                               });
         stock_splits_menu.append(&stock_splits_menu_item);
     }
@@ -340,7 +340,7 @@ pub fn create_stock_splits_register(commodity_guid: &Rc<String>, fullname: Strin
             if masked_state == ModifierType::CONTROL_MASK.bits() {
                 match event_key.get_keyval() {
                     key::n => {
-                        new_stock_split(&stock_splits_register_key_press_event);
+                        new_stock_split(&stock_splits_register_key_press_event, &globals_key_press_event);
                         Inhibit(true)
                     }
                     key::d => {

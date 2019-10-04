@@ -52,7 +52,6 @@ use utilities::{
     get_string_column_via_path, select_last_row, select_row_by_guid,
     update_boolean_column_via_path, update_string_column_via_path,
 };
-use {DB, GUID_TO_PATH_STMT, NEW_UUID_STMT};
 
 // Constants
 
@@ -134,11 +133,11 @@ const ACCOUNT_WINDOW_WIDTH: i32 = 1000;
 
 fn display_reconciled_balance(account_register: &AccountRegister, globals: &Globals) {
     let reconciled_balance: f64 =
-        cache_statement_locally!(RECONCILED_BALANCE_SQL).query_row(params![account_register.guid],
+        prepare_statement!(RECONCILED_BALANCE_SQL, globals).query_row(params![account_register.guid],
                                                                    get_result!(f64))
                                                         .unwrap();
     let reconciled_balance_string = format!("Reconciled balance for\n{}\n\n${:.*}",
-                guid_to_path(cache_statement_globally!(GUID_TO_PATH_SQL, GUID_TO_PATH_STMT),
+                guid_to_path(prepare_statement!(GUID_TO_PATH_SQL, globals),
                              &account_register.guid),
                 2,
                 reconciled_balance);
@@ -199,14 +198,14 @@ open transaction registers. Please close those registers and try again.",
 
         // Delete all splits pointing at this transaction
         {
-            cache_statement_locally!(DELETE_TRANSACTION_SPLITS_SQL)
+            prepare_statement!(DELETE_TRANSACTION_SPLITS_SQL, globals)
                 .execute(params![transaction_guid])
                 .unwrap();
         }
 
         // Now delete the transaction itself
         {
-            cache_statement_locally!(DELETE_TRANSACTION_SQL).execute(params![transaction_guid])
+            prepare_statement!(DELETE_TRANSACTION_SQL, globals).execute(params![transaction_guid])
                                                             .unwrap();
         }
         if let Some(guid) = adjacent_transaction_guid {
@@ -220,7 +219,7 @@ open transaction registers. Please close those registers and try again.",
 fn duplicate_transaction(account_register: &AccountRegister, today_p: bool, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&account_register.core, globals) {
         let new_transaction_guid =
-            cache_statement_globally!(NEW_UUID_SQL, NEW_UUID_STMT).query_row(params![],
+            prepare_statement!(NEW_UUID_SQL, globals).query_row(params![],
                                                                              get_result!(string))
                                                                   .unwrap();
         let source_transaction_guid: String = model.get_value(&iter, STORE_TRANSACTION_GUID)
@@ -228,15 +227,15 @@ fn duplicate_transaction(account_register: &AccountRegister, today_p: bool, glob
                                                    .unwrap();
         // Create the new transaction with new guid
         if today_p {
-            cache_statement_locally!(DUPLICATE_TRANSACTION_NO_DATE_SQL)
+            prepare_statement!(DUPLICATE_TRANSACTION_NO_DATE_SQL, globals)
                 .execute(params![new_transaction_guid, source_transaction_guid])
                 .unwrap();
         } else {
             let source_transaction_date: String = model.get_value(&iter, STORE_DATE).get().unwrap();
             if let Some(new_date) =
-                display_calendar(&source_transaction_date, &account_register.core.window)
+                display_calendar(&source_transaction_date, &account_register.core.window, globals)
             {
-                cache_statement_locally!(DUPLICATE_TRANSACTION_WITH_DATE_SQL).execute(params![
+                prepare_statement!(DUPLICATE_TRANSACTION_WITH_DATE_SQL, globals).execute(params![
                     new_transaction_guid,
                     source_transaction_guid,
                     &new_date
@@ -247,7 +246,7 @@ fn duplicate_transaction(account_register: &AccountRegister, today_p: bool, glob
             }
         }
         // Now copy the splits
-        cache_statement_locally!(DUPLICATE_TRANSACTION_SPLITS_SQL)
+        prepare_statement!(DUPLICATE_TRANSACTION_SPLITS_SQL, globals)
             .execute(params![new_transaction_guid, source_transaction_guid])
             .unwrap();
         refresh_account_registers(None, Some(&new_transaction_guid), globals);
@@ -258,16 +257,16 @@ fn duplicate_transaction(account_register: &AccountRegister, today_p: bool, glob
 fn display_calendar_for_transaction(account_register: &AccountRegister, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&account_register.core, globals) {
         let current_date: String = model.get_value(&iter, STORE_DATE).get().unwrap();
-        if let Some(new_date) = display_calendar(&current_date, &account_register.core.window) {
+        if let Some(new_date) = display_calendar(&current_date, &account_register.core.window, globals) {
             let transaction_guid: String = model.get_value(&iter, STORE_TRANSACTION_GUID)
                                                 .get()
                                                 .unwrap();
             date_edited(&transaction_guid,
-                        cache_statement_locally!(INCREMENT_TRANSACTION_DATE_SQL),
-                        cache_statement_locally!(TRANSACTION_DATE_TO_FIRST_OF_MONTH_SQL),
-                        cache_statement_locally!(TRANSACTION_DATE_TO_END_OF_MONTH_SQL),
-                        cache_statement_locally!(TRANSACTION_DATE_TODAY_SQL),
-                        cache_statement_locally!(TRANSACTION_DATE_TO_USER_ENTRY_SQL),
+                        prepare_statement!(INCREMENT_TRANSACTION_DATE_SQL, globals),
+                        prepare_statement!(TRANSACTION_DATE_TO_FIRST_OF_MONTH_SQL, globals),
+                        prepare_statement!(TRANSACTION_DATE_TO_END_OF_MONTH_SQL, globals),
+                        prepare_statement!(TRANSACTION_DATE_TODAY_SQL, globals),
+                        prepare_statement!(TRANSACTION_DATE_TO_USER_ENTRY_SQL, globals),
                         &new_date,
                         &globals);
             refresh_account_registers(None, Some(&transaction_guid), &globals);
@@ -284,7 +283,7 @@ fn num_field_edited(path: &TreePath, new_field: &str, account_register: &Account
                                    STORE_TRANSACTION_GUID);
 
     // Update the database
-    cache_statement_locally!("update transactions set num = ?1 where guid = ?2")
+    prepare_statement!("update transactions set num = ?1 where guid = ?2", globals)
         .execute(params![new_field.to_string(), transaction_guid])
         .unwrap();
 
@@ -303,7 +302,7 @@ fn description_field_edited(path: &TreePath, new_field: &str,
                                    STORE_TRANSACTION_GUID);
 
     // Update the database
-    cache_statement_locally!("update transactions set description = ?1 where guid = ?2")
+    prepare_statement!("update transactions set description = ?1 where guid = ?2", globals)
         .execute(params![new_field.to_string(), transaction_guid])
         .unwrap();
 
@@ -316,16 +315,16 @@ fn description_field_edited(path: &TreePath, new_field: &str,
 // Called when a new transaction is requested
 fn new_transaction(account_register: &AccountRegister, globals: &Globals) {
     let transaction_guid =
-        cache_statement_globally!(NEW_UUID_SQL, NEW_UUID_STMT).query_row(params![],
+        prepare_statement!(NEW_UUID_SQL, globals).query_row(params![],
                                                                          get_result!(string))
                                                               .unwrap();
     // We will insert the new transaction into the database, together with two associated splits, one for the account
     // displayed in the register, the other unspecified.
-    cache_statement_locally!(NEW_TRANSACTION_SQL).execute(params![transaction_guid,
+    prepare_statement!(NEW_TRANSACTION_SQL, globals).execute(params![transaction_guid,
                                                                   account_register.guid])
                                                  .unwrap();
     // And the splits
-    let stmt: &mut Statement = cache_statement_locally!(NEW_TRANSACTION_SPLIT_SQL);
+    let stmt: &mut Statement = prepare_statement!(NEW_TRANSACTION_SPLIT_SQL, globals);
     stmt.execute(params![transaction_guid, account_register.guid])
         .unwrap();
     stmt.execute(params![transaction_guid, globals.unspecified_account_guid])
@@ -340,7 +339,7 @@ fn r_toggled(path: &TreePath, account_register: &AccountRegister, globals: &Glob
     let current_r: bool = get_boolean_column_via_path(&account_register.store, path, STORE_R);
 
     // Update the database
-    cache_statement_locally!(TOGGLE_TRANSACTION_R_FLAG_SQL).execute(params![transaction_guid,
+    prepare_statement!(TOGGLE_TRANSACTION_R_FLAG_SQL, globals).execute(params![transaction_guid,
                                                                             account_register.guid])
                                                            .unwrap();
 
@@ -366,7 +365,7 @@ fn r_toggled(path: &TreePath, account_register: &AccountRegister, globals: &Glob
 pub fn refresh_account_registers(maybe_skip: Option<&AccountRegister>,
                                  maybe_transaction_guid: Option<&String>, globals: &Globals) {
     fn refresh_account_register(account_register: &AccountRegister,
-                                maybe_transaction_guid: Option<&String>) {
+                                maybe_transaction_guid: Option<&String>, globals: &Globals) {
         // Record the current cursor information
         let (_, maybe_column) = account_register.core.view.get_cursor();
         // Detach the store/model from the view
@@ -374,7 +373,7 @@ pub fn refresh_account_registers(maybe_skip: Option<&AccountRegister>,
         account_register.core.view.set_model(temp);
         // Clear the store
         account_register.store.clear();
-        populate_account_register_store(account_register);
+        populate_account_register_store(account_register, globals);
         // Re-connect store to the view
         account_register.core
                         .view
@@ -396,15 +395,15 @@ pub fn refresh_account_registers(maybe_skip: Option<&AccountRegister>,
     for account_register in globals.account_registers.borrow().values() {
         if let Some(account_register_to_skip) = maybe_skip {
             if account_register.guid != account_register_to_skip.guid {
-                refresh_account_register(account_register, maybe_transaction_guid);
+                refresh_account_register(account_register, maybe_transaction_guid, globals);
             };
         } else {
-            refresh_account_register(account_register, maybe_transaction_guid);
+            refresh_account_register(account_register, maybe_transaction_guid, globals);
         }
     }
 }
 
-fn populate_account_register_store(account_register: &AccountRegister) {
+fn populate_account_register_store(account_register: &AccountRegister, globals:&Globals) {
     let store = &account_register.store;
     // Set up the query that fetches transaction data to produce the account_register.
     // Marketable account?
@@ -416,8 +415,8 @@ fn populate_account_register_store(account_register: &AccountRegister) {
         // value is not zero. Those occur in sale transactions; such splits are part of account for capital gains. If
         // they were included by this query, it would result in incorrect values (we want to include only splits
         // with non-zero quantities in the value sum).
-        let marketable_iter = cache_statement_locally!(MARKETABLE_ACCOUNT_REGISTER_SQL)
-            .query_map(
+        let stmt = prepare_statement!(MARKETABLE_ACCOUNT_REGISTER_SQL, globals);
+        let marketable_iter = stmt.query_map(
                 params![account_register.guid],
                 |row| -> Result<
                     (String, String, String, i32, String, f64, f64, String),
@@ -450,7 +449,7 @@ fn populate_account_register_store(account_register: &AccountRegister) {
             // The idea with the handling of the quantity is to do the balance accumulation with integer arithmetic and then
             // divide by the denominator only when it has to be stored in the model as a double. Deferring the division
             // until the last possible moment avoids the propagation of roundoff error.
-            let split_adjusted_quantity: f64 = quantity * get_split_factor(&split_guid);
+            let split_adjusted_quantity: f64 = quantity * get_split_factor(&split_guid, globals);
             quantity_balance += split_adjusted_quantity;
             let quantity_string = format!("{:.*}", 4, split_adjusted_quantity);
             let price: f64 = value / split_adjusted_quantity;
@@ -481,7 +480,8 @@ fn populate_account_register_store(account_register: &AccountRegister) {
         }
     } else {
         let mut value_balance: f64 = 0.;
-        let non_marketable_iter = cache_statement_locally!(NON_MARKETABLE_ACCOUNT_REGISTER_SQL)
+        let stmt = prepare_statement!(NON_MARKETABLE_ACCOUNT_REGISTER_SQL, globals);
+        let non_marketable_iter = stmt
             .query_map(
                 params![account_register.guid],
                 |row| -> Result<(String, String, String, i32, String, f64), rusqlite::Error> {
@@ -616,7 +616,7 @@ pub fn create_account_register(account_guid: String, shares_p: bool, full_accoun
                .insert(account_guid.clone(), account_register.clone());
 
         // Populate the model/store
-        populate_account_register_store(&account_register);
+        populate_account_register_store(&account_register, globals);
 
         // Unwrap optional entries used repeatedly below
         let view = &account_register.core.view;
@@ -640,11 +640,11 @@ pub fn create_account_register(account_guid: String, shares_p: bool, full_accoun
                                                        STORE_TRANSACTION_GUID);
                         date_edited(
                     &transaction_guid,
-                    cache_statement_locally!(INCREMENT_TRANSACTION_DATE_SQL),
-                    cache_statement_locally!(TRANSACTION_DATE_TO_FIRST_OF_MONTH_SQL),
-                    cache_statement_locally!(TRANSACTION_DATE_TO_END_OF_MONTH_SQL),
-                    cache_statement_locally!(TRANSACTION_DATE_TODAY_SQL),
-                    cache_statement_locally!(TRANSACTION_DATE_TO_USER_ENTRY_SQL),
+                    prepare_statement!(INCREMENT_TRANSACTION_DATE_SQL, closure_globals),
+                    prepare_statement!(TRANSACTION_DATE_TO_FIRST_OF_MONTH_SQL, closure_globals),
+                    prepare_statement!(TRANSACTION_DATE_TO_END_OF_MONTH_SQL, closure_globals),
+                    prepare_statement!(TRANSACTION_DATE_TODAY_SQL, closure_globals),
+                    prepare_statement!(TRANSACTION_DATE_TO_USER_ENTRY_SQL, closure_globals),
                     new_date,
                     &closure_globals,
                 );

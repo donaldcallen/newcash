@@ -57,22 +57,22 @@ enum InvestmentReportType {
     MostRecentQuote,
 }
 
-struct AccountValueStatements<'l> {
-    marketable_asset_value_statement: Statement<'l>,
-    non_marketable_asset_and_liability_value_statement: Statement<'l>,
-    income_and_expenses_value_statement: Statement<'l>,
+struct AccountStatements<'l> {
+    marketable_asset_value: Statement<'l>,
+    non_marketable_asset_and_liability_value: Statement<'l>,
+    income_and_expenses_value: Statement<'l>,
+    account_children: Statement<'l>,
 }
 
 impl Account {
     // This routine takes the an account as self and adds the entire tree of descendents,
     // including the cumulative value of those descendents in its value slot.
-    fn build_account_tree(&mut self, statements: &mut AccountValueStatements,
-                          account_children_statement: &mut Statement,
+    fn build_account_tree(&mut self, statements: &mut AccountStatements,
                           julian_begin_date_time: f64, julian_end_date_time: f64) {
         {
             // Create child accounts and get their data from the database
-            let children_iter =
-                account_children_statement.query_map(params![self.guid], |row| {
+            let children_iter = statements.account_children
+                                          .query_map(params![self.guid], |row| {
                                               Ok(Account { name: row.get(0).unwrap(),
                                                            guid: row.get(1).unwrap(),
                                                            value: 0.0,
@@ -82,46 +82,39 @@ impl Account {
                                           .unwrap();
             for wrapped_child in children_iter {
                 let mut child = wrapped_child.unwrap();
-                child.value = {
-                    // The asset and liability statements take two arguments, so set that up here
-                    // and change if it turns out to be an income-expense statement, which requires
-                    // a third argument
-                    let mut both_dates_needed_p = false;
-                    let maybe_statement = if (self.flags & ACCOUNT_FLAG_DESCENDENTS_ARE_ASSETS) != 0
-                    {
-                        if (self.flags & ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE) != 0 {
-                            Some(&mut statements.marketable_asset_value_statement)
-                        } else {
-                            Some(&mut statements.non_marketable_asset_and_liability_value_statement)
-                        }
-                    } else if (self.flags & ACCOUNT_FLAG_DESCENDENTS_ARE_LIABILITIES) != 0 {
-                        Some(&mut statements.non_marketable_asset_and_liability_value_statement)
-                    } else if (self.flags
-                               & (ACCOUNT_FLAG_DESCENDENTS_ARE_INCOME
-                                  | ACCOUNT_FLAG_DESCENDENTS_ARE_EXPENSES))
-                              != 0
-                    {
-                        both_dates_needed_p = true;
-                        Some(&mut statements.income_and_expenses_value_statement)
+                // The asset and liability statements take two arguments, so set that up here
+                // and change if it turns out to be an income-expense statement, which requires
+                // a third argument
+                child.value = if (self.flags & ACCOUNT_FLAG_DESCENDENTS_ARE_ASSETS) != 0 {
+                    if (self.flags & ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE) != 0 {
+                        statements.marketable_asset_value
+                                  .query_row(params![child.guid, julian_end_date_time],
+                                             get_result!(f64))
+                                  .unwrap()
                     } else {
-                        None
-                    };
-                    match maybe_statement {
-                        Some(statement) => {
-                            if both_dates_needed_p {
-                                statement.query_row(params![child.guid,
-                                                            julian_end_date_time,
-                                                            julian_begin_date_time],
-                                                    get_result!(f64))
-                                         .unwrap()
-                            } else {
-                                statement.query_row(params![child.guid, julian_end_date_time],
-                                                    get_result!(f64))
-                                         .unwrap()
-                            }
-                        }
-                        None => 0.0,
+                        statements.non_marketable_asset_and_liability_value
+                                  .query_row(params![child.guid, julian_end_date_time],
+                                             get_result!(f64))
+                                  .unwrap()
                     }
+                } else if (self.flags & ACCOUNT_FLAG_DESCENDENTS_ARE_LIABILITIES) != 0 {
+                    statements.non_marketable_asset_and_liability_value
+                              .query_row(params![child.guid, julian_end_date_time],
+                                         get_result!(f64))
+                              .unwrap()
+                } else if (self.flags
+                           & (ACCOUNT_FLAG_DESCENDENTS_ARE_INCOME
+                              | ACCOUNT_FLAG_DESCENDENTS_ARE_EXPENSES))
+                          != 0
+                {
+                    statements.income_and_expenses_value
+                              .query_row(params![child.guid,
+                                                 julian_end_date_time,
+                                                 julian_begin_date_time],
+                                         get_result!(f64))
+                              .unwrap()
+                } else {
+                    0.0
                 };
                 child.flags |= self.flags
                                & (ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE
@@ -137,7 +130,6 @@ impl Account {
         if !self.children.is_empty() {
             for child in &mut self.children {
                 child.build_account_tree(statements,
-                                         account_children_statement,
                                          julian_begin_date_time,
                                          julian_end_date_time);
                 self.value += child.value;
@@ -589,8 +581,7 @@ Usage: newcashReportGenerator beginDate endDate depth pathToDatabase pathToTexFi
             };
 
             // Investments
-            let mut date_conversion_statement =
-                db.prepare(queries::CONVERT_JULIAN_DAY_SQL).unwrap();
+            let mut date_conversion_statement = db.prepare(queries::CONVERT_JULIAN_DAY_SQL).unwrap();
             investment_report_tex.push_str(constants::INVESTMENTS_HEADER);
 
             // Open positions subsection header
@@ -671,14 +662,16 @@ Usage: newcashReportGenerator beginDate endDate depth pathToDatabase pathToTexFi
                               .unwrap();
 
     // Prepare to build the account tree
-    let mut account_value_statements: AccountValueStatements = AccountValueStatements {
-        marketable_asset_value_statement: db.prepare(queries::MARKETABLE_ASSET_VALUE_SQL).unwrap(),
-        non_marketable_asset_and_liability_value_statement: db.prepare(queries::NON_MARKETABLE_ASSET_AND_LIABILITY_VALUE_SQL).unwrap(),
-        income_and_expenses_value_statement: db.prepare(queries::INCOME_AND_EXPENSES_VALUE_SQL).unwrap(),
-    };
-    let mut account_children_statement = db.prepare(queries::ACCOUNT_CHILDREN_SQL).unwrap();
-    root.build_account_tree(&mut account_value_statements,
-                            &mut account_children_statement,
+    let mut account_statements: AccountStatements =
+        AccountStatements { marketable_asset_value:
+                                db.prepare(queries::MARKETABLE_ASSET_VALUE_SQL).unwrap(),
+                            non_marketable_asset_and_liability_value:
+                                db.prepare(queries::NON_MARKETABLE_ASSET_AND_LIABILITY_VALUE_SQL)
+                                  .unwrap(),
+                            income_and_expenses_value:
+                                db.prepare(queries::INCOME_AND_EXPENSES_VALUE_SQL).unwrap(),
+                            account_children: db.prepare(queries::ACCOUNT_CHILDREN_SQL).unwrap()};
+    root.build_account_tree(&mut account_statements,
                             julian_begin_date_time,
                             julian_end_date_time);
 
