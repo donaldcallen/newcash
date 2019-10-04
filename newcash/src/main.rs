@@ -88,7 +88,7 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
 
     let db_path = env::args().nth(DB_PATH_INDEX).unwrap();
     let db = Connection::open(&db_path).unwrap();
-    let (root_account_guid, book_name, unspecified_account_guid) = 
+    let (root_account_guid, book_name, unspecified_account_guid) =
         db.query_row(BASIC_INFO_SQL, params![], get_result!(string_string_string))
           .unwrap();
 
@@ -133,7 +133,9 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
     let extensions_file_path = Path::new(&unix_extensions_file_path);
     {
         let _guard = LoadExtensionGuard::new(&globals.db).unwrap();
-        &globals.db.load_extension(extensions_file_path, None).unwrap();
+        &globals.db
+                .load_extension(extensions_file_path, None)
+                .unwrap();
     }
 
     // Set rusqlite cache capacity
@@ -277,7 +279,7 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
                                                      &account_guid,
                                                      ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE);
                        path = guid_to_path(prepare_statement!(GUID_TO_PATH_SQL,
-                                                                     globals_row_activated),
+                                                              globals_row_activated),
                                            &account_guid);
                    }
                    create_account_register(account_guid,

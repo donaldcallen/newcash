@@ -137,10 +137,11 @@ fn display_reconciled_balance(account_register: &AccountRegister, globals: &Glob
                                                                    get_result!(f64))
                                                         .unwrap();
     let reconciled_balance_string = format!("Reconciled balance for\n{}\n\n${:.*}",
-                guid_to_path(prepare_statement!(GUID_TO_PATH_SQL, globals),
-                             &account_register.guid),
-                2,
-                reconciled_balance);
+                                            guid_to_path(prepare_statement!(GUID_TO_PATH_SQL,
+                                                                            globals),
+                                                         &account_register.guid),
+                                            2,
+                                            reconciled_balance);
     display_message_dialog(&reconciled_balance_string, globals);
 }
 
@@ -206,7 +207,7 @@ open transaction registers. Please close those registers and try again.",
         // Now delete the transaction itself
         {
             prepare_statement!(DELETE_TRANSACTION_SQL, globals).execute(params![transaction_guid])
-                                                            .unwrap();
+                                                               .unwrap();
         }
         if let Some(guid) = adjacent_transaction_guid {
             refresh_account_registers(None, Some(&guid), globals);
@@ -219,9 +220,8 @@ open transaction registers. Please close those registers and try again.",
 fn duplicate_transaction(account_register: &AccountRegister, today_p: bool, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&account_register.core, globals) {
         let new_transaction_guid =
-            prepare_statement!(NEW_UUID_SQL, globals).query_row(params![],
-                                                                             get_result!(string))
-                                                                  .unwrap();
+            prepare_statement!(NEW_UUID_SQL, globals).query_row(params![], get_result!(string))
+                                                     .unwrap();
         let source_transaction_guid: String = model.get_value(&iter, STORE_TRANSACTION_GUID)
                                                    .get()
                                                    .unwrap();
@@ -232,15 +232,16 @@ fn duplicate_transaction(account_register: &AccountRegister, today_p: bool, glob
                 .unwrap();
         } else {
             let source_transaction_date: String = model.get_value(&iter, STORE_DATE).get().unwrap();
-            if let Some(new_date) =
-                display_calendar(&source_transaction_date, &account_register.core.window, globals)
+            if let Some(new_date) = display_calendar(&source_transaction_date,
+                                                     &account_register.core.window,
+                                                     globals)
             {
                 prepare_statement!(DUPLICATE_TRANSACTION_WITH_DATE_SQL, globals).execute(params![
                     new_transaction_guid,
                     source_transaction_guid,
                     &new_date
                 ])
-                                                                             .unwrap();
+                                                                                .unwrap();
             } else {
                 return;
             }
@@ -257,7 +258,9 @@ fn duplicate_transaction(account_register: &AccountRegister, today_p: bool, glob
 fn display_calendar_for_transaction(account_register: &AccountRegister, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&account_register.core, globals) {
         let current_date: String = model.get_value(&iter, STORE_DATE).get().unwrap();
-        if let Some(new_date) = display_calendar(&current_date, &account_register.core.window, globals) {
+        if let Some(new_date) =
+            display_calendar(&current_date, &account_register.core.window, globals)
+        {
             let transaction_guid: String = model.get_value(&iter, STORE_TRANSACTION_GUID)
                                                 .get()
                                                 .unwrap();
@@ -302,9 +305,9 @@ fn description_field_edited(path: &TreePath, new_field: &str,
                                    STORE_TRANSACTION_GUID);
 
     // Update the database
-    prepare_statement!("update transactions set description = ?1 where guid = ?2", globals)
-        .execute(params![new_field.to_string(), transaction_guid])
-        .unwrap();
+    prepare_statement!("update transactions set description = ?1 where guid = ?2",
+                       globals).execute(params![new_field.to_string(), transaction_guid])
+                               .unwrap();
 
     // Write new value to store
     update_string_column_via_path(&account_register.store, path, new_field, STORE_DESCRIPTION);
@@ -314,15 +317,14 @@ fn description_field_edited(path: &TreePath, new_field: &str,
 
 // Called when a new transaction is requested
 fn new_transaction(account_register: &AccountRegister, globals: &Globals) {
-    let transaction_guid =
-        prepare_statement!(NEW_UUID_SQL, globals).query_row(params![],
-                                                                         get_result!(string))
-                                                              .unwrap();
+    let transaction_guid = prepare_statement!(NEW_UUID_SQL, globals).query_row(params![],
+                                                                               get_result!(string))
+                                                                    .unwrap();
     // We will insert the new transaction into the database, together with two associated splits, one for the account
     // displayed in the register, the other unspecified.
     prepare_statement!(NEW_TRANSACTION_SQL, globals).execute(params![transaction_guid,
-                                                                  account_register.guid])
-                                                 .unwrap();
+                                                                     account_register.guid])
+                                                    .unwrap();
     // And the splits
     let stmt: &mut Statement = prepare_statement!(NEW_TRANSACTION_SPLIT_SQL, globals);
     stmt.execute(params![transaction_guid, account_register.guid])
@@ -341,7 +343,7 @@ fn r_toggled(path: &TreePath, account_register: &AccountRegister, globals: &Glob
     // Update the database
     prepare_statement!(TOGGLE_TRANSACTION_R_FLAG_SQL, globals).execute(params![transaction_guid,
                                                                             account_register.guid])
-                                                           .unwrap();
+                                                              .unwrap();
 
     // Update the model and view
     update_boolean_column_via_path(&account_register.store, path, !current_r, STORE_R);
@@ -403,7 +405,7 @@ pub fn refresh_account_registers(maybe_skip: Option<&AccountRegister>,
     }
 }
 
-fn populate_account_register_store(account_register: &AccountRegister, globals:&Globals) {
+fn populate_account_register_store(account_register: &AccountRegister, globals: &Globals) {
     let store = &account_register.store;
     // Set up the query that fetches transaction data to produce the account_register.
     // Marketable account?
@@ -416,25 +418,20 @@ fn populate_account_register_store(account_register: &AccountRegister, globals:&
         // they were included by this query, it would result in incorrect values (we want to include only splits
         // with non-zero quantities in the value sum).
         let stmt = prepare_statement!(MARKETABLE_ACCOUNT_REGISTER_SQL, globals);
-        let marketable_iter = stmt.query_map(
-                params![account_register.guid],
-                |row| -> Result<
-                    (String, String, String, i32, String, f64, f64, String),
-                    rusqlite::Error,
-                > {
-                    Ok((
-                        row.get(QUERY_DATE).unwrap(),
-                        row.get(QUERY_NUM).unwrap(),
-                        row.get(QUERY_DESCRIPTION).unwrap(),
-                        row.get(QUERY_FLAGS).unwrap(),
-                        row.get(QUERY_TRANSACTION_GUID).unwrap(),
-                        row.get(QUERY_VALUE).unwrap(),
-                        row.get(SHARES_QUERY_QUANTITY).unwrap(),
-                        row.get(SHARES_QUERY_SPLIT_GUID).unwrap(),
-                    ))
-                },
-            )
-            .unwrap();
+        let marketable_iter =
+            stmt.query_map(params![account_register.guid],
+                           |row| -> Result<(String, String, String, i32, String, f64, f64, String),
+                                      rusqlite::Error> {
+                               Ok((row.get(QUERY_DATE).unwrap(),
+                                   row.get(QUERY_NUM).unwrap(),
+                                   row.get(QUERY_DESCRIPTION).unwrap(),
+                                   row.get(QUERY_FLAGS).unwrap(),
+                                   row.get(QUERY_TRANSACTION_GUID).unwrap(),
+                                   row.get(QUERY_VALUE).unwrap(),
+                                   row.get(SHARES_QUERY_QUANTITY).unwrap(),
+                                   row.get(SHARES_QUERY_SPLIT_GUID).unwrap()))
+                           })
+                .unwrap();
         for wrapped_result in marketable_iter {
             let (date,
                  num,
@@ -481,21 +478,18 @@ fn populate_account_register_store(account_register: &AccountRegister, globals:&
     } else {
         let mut value_balance: f64 = 0.;
         let stmt = prepare_statement!(NON_MARKETABLE_ACCOUNT_REGISTER_SQL, globals);
-        let non_marketable_iter = stmt
-            .query_map(
-                params![account_register.guid],
-                |row| -> Result<(String, String, String, i32, String, f64), rusqlite::Error> {
-                    Ok((
-                        row.get(QUERY_DATE).unwrap(),
-                        row.get(QUERY_NUM).unwrap(),
-                        row.get(QUERY_DESCRIPTION).unwrap(),
-                        row.get(QUERY_FLAGS).unwrap(),
-                        row.get(QUERY_TRANSACTION_GUID).unwrap(),
-                        row.get(QUERY_VALUE).unwrap(),
-                    ))
-                },
-            )
-            .unwrap();
+        let non_marketable_iter =
+            stmt.query_map(params![account_register.guid],
+                           |row| -> Result<(String, String, String, i32, String, f64),
+                                      rusqlite::Error> {
+                               Ok((row.get(QUERY_DATE).unwrap(),
+                                   row.get(QUERY_NUM).unwrap(),
+                                   row.get(QUERY_DESCRIPTION).unwrap(),
+                                   row.get(QUERY_FLAGS).unwrap(),
+                                   row.get(QUERY_TRANSACTION_GUID).unwrap(),
+                                   row.get(QUERY_VALUE).unwrap()))
+                           })
+                .unwrap();
         for wrapped_result in non_marketable_iter {
             let (date, num, description, split_flags, transaction_guid, value) =
                 wrapped_result.unwrap();
@@ -638,16 +632,19 @@ pub fn create_account_register(account_guid: String, shares_p: bool, full_accoun
                             get_string_column_via_path(&closure_account_register.store,
                                                        &path,
                                                        STORE_TRANSACTION_GUID);
-                        date_edited(
-                    &transaction_guid,
-                    prepare_statement!(INCREMENT_TRANSACTION_DATE_SQL, closure_globals),
-                    prepare_statement!(TRANSACTION_DATE_TO_FIRST_OF_MONTH_SQL, closure_globals),
-                    prepare_statement!(TRANSACTION_DATE_TO_END_OF_MONTH_SQL, closure_globals),
-                    prepare_statement!(TRANSACTION_DATE_TODAY_SQL, closure_globals),
-                    prepare_statement!(TRANSACTION_DATE_TO_USER_ENTRY_SQL, closure_globals),
-                    new_date,
-                    &closure_globals,
-                );
+                        date_edited(&transaction_guid,
+                                    prepare_statement!(INCREMENT_TRANSACTION_DATE_SQL,
+                                                       closure_globals),
+                                    prepare_statement!(TRANSACTION_DATE_TO_FIRST_OF_MONTH_SQL,
+                                                       closure_globals),
+                                    prepare_statement!(TRANSACTION_DATE_TO_END_OF_MONTH_SQL,
+                                                       closure_globals),
+                                    prepare_statement!(TRANSACTION_DATE_TODAY_SQL,
+                                                       closure_globals),
+                                    prepare_statement!(TRANSACTION_DATE_TO_USER_ENTRY_SQL,
+                                                       closure_globals),
+                                    new_date,
+                                    &closure_globals);
                         refresh_account_registers(None, Some(&transaction_guid), &closure_globals);
                     });
             renderer.set_property_editable(true);

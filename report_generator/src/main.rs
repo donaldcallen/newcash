@@ -129,9 +129,7 @@ impl Account {
         }
         if !self.children.is_empty() {
             for child in &mut self.children {
-                child.build_account_tree(statements,
-                                         julian_begin_date_time,
-                                         julian_end_date_time);
+                child.build_account_tree(statements, julian_begin_date_time, julian_end_date_time);
                 self.value += child.value;
             }
             // Sort the children
@@ -581,7 +579,8 @@ Usage: newcashReportGenerator beginDate endDate depth pathToDatabase pathToTexFi
             };
 
             // Investments
-            let mut date_conversion_statement = db.prepare(queries::CONVERT_JULIAN_DAY_SQL).unwrap();
+            let mut date_conversion_statement =
+                db.prepare(queries::CONVERT_JULIAN_DAY_SQL).unwrap();
             investment_report_tex.push_str(constants::INVESTMENTS_HEADER);
 
             // Open positions subsection header
@@ -670,7 +669,7 @@ Usage: newcashReportGenerator beginDate endDate depth pathToDatabase pathToTexFi
                                   .unwrap(),
                             income_and_expenses_value:
                                 db.prepare(queries::INCOME_AND_EXPENSES_VALUE_SQL).unwrap(),
-                            account_children: db.prepare(queries::ACCOUNT_CHILDREN_SQL).unwrap()};
+                            account_children: db.prepare(queries::ACCOUNT_CHILDREN_SQL).unwrap() };
     root.build_account_tree(&mut account_statements,
                             julian_begin_date_time,
                             julian_end_date_time);

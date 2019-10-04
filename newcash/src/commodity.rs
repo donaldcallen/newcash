@@ -67,7 +67,7 @@ fn delete_quote(commodity_register: &CommodityRegister, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&commodity_register.core, globals) {
         let quote_guid: String = model.get_value(&iter, STORE_GUID).get().unwrap();
         prepare_statement!(DELETE_QUOTE_SQL, globals).execute(params![quote_guid])
-                                                  .unwrap();
+                                                     .unwrap();
         // And refresh the commodity register, so we can see the change
         refresh_commodity_register(&commodity_register, globals);
     }
@@ -77,7 +77,9 @@ fn delete_quote(commodity_register: &CommodityRegister, globals: &Globals) {
 fn display_calendar_for_quote(commodity_register: &CommodityRegister, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&commodity_register.core, globals) {
         let current_date: String = model.get_value(&iter, STORE_TIMESTAMP).get().unwrap();
-        if let Some(new_date) = display_calendar(&current_date, &commodity_register.core.window, globals) {
+        if let Some(new_date) =
+            display_calendar(&current_date, &commodity_register.core.window, globals)
+        {
             let quote_guid: String = model.get_value(&iter, STORE_GUID).get().unwrap();
             date_edited(&quote_guid,
                         prepare_statement!(QUOTE_INCREMENT_TIMESTAMP_SQL, globals),
@@ -94,7 +96,7 @@ fn display_calendar_for_quote(commodity_register: &CommodityRegister, globals: &
 
 fn new_quote(commodity_register: &CommodityRegister, globals: &Globals) {
     prepare_statement!(NEW_QUOTE_SQL, globals).execute(params![commodity_register.guid])
-                                           .unwrap();
+                                              .unwrap();
     refresh_commodity_register(&commodity_register, globals);
 }
 
@@ -108,8 +110,8 @@ fn value_field_edited(path: &TreePath, store_index: i32, new_value: &str,
     if let Ok(parsed_value) = new_value.parse::<f64>() {
         // Update the database
         prepare_statement!(QUOTE_UPDATE_VALUE_SQL, globals).execute(params![parsed_value,
-                                                                         commodity_guid])
-                                                        .unwrap();
+                                                                            commodity_guid])
+                                                           .unwrap();
 
         // Write new value to store
         update_string_column_via_path(store, path, new_value, store_index);
@@ -124,10 +126,9 @@ fn populate_commodity_register_store(commodity_register: &CommodityRegister, glo
     let store = &commodity_register.store;
     // Set up the query that fetches price data to produce the register.
     let stmt = prepare_statement!(PRICES_SQL, globals);
-    let prices_iter =
-        stmt.query_map(params![commodity_register.guid],
-                                                       get_result!(string_string_f64))
-                                            .unwrap();
+    let prices_iter = stmt.query_map(params![commodity_register.guid],
+                                     get_result!(string_string_f64))
+                          .unwrap();
     for wrapped_result in prices_iter {
         let (guid, timestamp, price) = wrapped_result.unwrap();
         // Append an empty row to the list store. Iter will point to the new row
@@ -182,10 +183,13 @@ pub fn create_commodity_register(commodity_guid: String, commodity_name: &str,
                                                    STORE_GUID);
                     date_edited(&guid,
                                 prepare_statement!(QUOTE_INCREMENT_TIMESTAMP_SQL, closure_globals),
-                                prepare_statement!(QUOTE_TIMESTAMP_TO_FIRST_OF_MONTH_SQL, closure_globals),
-                                prepare_statement!(QUOTE_TIMESTAMP_TO_END_OF_MONTH_SQL, closure_globals),
+                                prepare_statement!(QUOTE_TIMESTAMP_TO_FIRST_OF_MONTH_SQL,
+                                                   closure_globals),
+                                prepare_statement!(QUOTE_TIMESTAMP_TO_END_OF_MONTH_SQL,
+                                                   closure_globals),
                                 prepare_statement!(QUOTE_TIMESTAMP_TODAY_SQL, closure_globals),
-                                prepare_statement!(QUOTE_TIMESTAMP_TO_USER_ENTRY_SQL, closure_globals),
+                                prepare_statement!(QUOTE_TIMESTAMP_TO_USER_ENTRY_SQL,
+                                                   closure_globals),
                                 &new_timestamp,
                                 &closure_globals);
                     refresh_commodity_register(&closure_commodity_register, &closure_globals);
@@ -278,7 +282,8 @@ pub fn create_commodity_register(commodity_guid: String, commodity_name: &str,
             if masked_state == ModifierType::CONTROL_MASK.bits() {
                 match event_key.get_keyval() {
                     key::n => {
-                        new_quote(&commodity_register_key_press_event, &globals_key_press_event);
+                        new_quote(&commodity_register_key_press_event,
+                                  &globals_key_press_event);
                         Inhibit(true)
                     }
                     key::a => {

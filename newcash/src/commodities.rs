@@ -118,13 +118,12 @@ fn refresh_commodities_register(commodities_register: &CommoditiesRegister,
 fn display_linked_accounts(commodity_guid: String, to_clipboard: bool, globals: &Globals) {
     let mut account_paths: String = "".to_string();
     let stmt = prepare_statement!(ACCOUNTS_LINKED_TO_COMMODITY_SQL, globals);
-    let iter = stmt
-        .query_map(params![commodity_guid], get_result!(string))
-        .unwrap();
+    let iter = stmt.query_map(params![commodity_guid], get_result!(string))
+                   .unwrap();
     for wrapped_result in iter {
         let account_guid: String = wrapped_result.unwrap();
-        let account_path = guid_to_path(prepare_statement!(GUID_TO_PATH_SQL, globals),
-                                        &account_guid);
+        let account_path =
+            guid_to_path(prepare_statement!(GUID_TO_PATH_SQL, globals), &account_guid);
         account_paths = format!("{}{}\n", account_paths, account_path);
     }
     if account_paths.is_empty() {
@@ -140,8 +139,8 @@ fn display_linked_accounts(commodity_guid: String, to_clipboard: bool, globals: 
 fn display_most_recent_quote_timestamp(globals: &Globals) {
     let most_recent_quote_date =
         prepare_statement!(LATEST_QUOTE_TIMESTAMP_SQL, globals).query_row(params![],
-                                                                       get_result!(string))
-                                                            .unwrap();
+                                                                          get_result!(string))
+                                                               .unwrap();
     display_message_dialog(&format!("Quotes are up-to-date as of {}", most_recent_quote_date),
                            globals);
 }
@@ -158,7 +157,7 @@ fn delete_commodity(commodities_register: &CommoditiesRegister, globals: &Global
         // Make sure no accounts are using the commodity
         if n_users == 0 {
             prepare_statement!(DELETE_COMMODITY_SQL, globals).execute(params![commodity_guid])
-                                                          .unwrap();
+                                                             .unwrap();
             // And refresh the commodities register, so we can see the change
             refresh_commodities_register(&commodities_register, None, globals);
         } else {
@@ -176,58 +175,59 @@ or assign other commodities to them.",
 fn duplicate_commodity(commodities_register: &CommoditiesRegister, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&commodities_register.core, globals) {
         let new_commodity_guid =
-            prepare_statement!(NEW_UUID_SQL, globals).query_row(params![],
-                                                                             get_result!(string))
-                                                                  .unwrap();
+            prepare_statement!(NEW_UUID_SQL, globals).query_row(params![], get_result!(string))
+                                                     .unwrap();
         let source_commodity_guid: String = model.get_value(&iter, STORE_GUID).get().unwrap();
         // Create the new commodity with new guid
         prepare_statement!(DUPLICATE_COMMODITY_SQL, globals).execute(params![new_commodity_guid,
                                                                           source_commodity_guid])
-                                                         .unwrap();
+                                                            .unwrap();
         refresh_commodities_register(&commodities_register, Some(&new_commodity_guid), globals);
     }
 }
 
 fn new_commodity(commodities_register: &CommoditiesRegister, globals: &Globals) {
     let new_commodity_guid =
-        prepare_statement!(NEW_UUID_SQL, globals).query_row(params![],
-                                                                         get_result!(string))
-                                                              .unwrap();
+        prepare_statement!(NEW_UUID_SQL, globals).query_row(params![], get_result!(string))
+                                                 .unwrap();
     prepare_statement!(NEW_COMMODITY_SQL, globals).execute(params![new_commodity_guid])
-                                               .unwrap();
+                                                  .unwrap();
     refresh_commodities_register(&commodities_register, Some(&new_commodity_guid), globals);
 }
 
 // Called when symbol is edited
-fn symbol_edited(path: &TreePath, new_symbol: &str, commodities_register: &CommoditiesRegister, globals:&Globals) {
+fn symbol_edited(path: &TreePath, new_symbol: &str, commodities_register: &CommoditiesRegister,
+                 globals: &Globals) {
     let store = &commodities_register.store;
     let commodity_guid: String = get_string_column_via_path(store, path, STORE_GUID);
 
     // Update the database
-    prepare_statement!("update commodities set mnemonic = ?1 where guid = ?2", globals)
-        .execute(params![new_symbol.to_string(), commodity_guid])
-        .unwrap();
+    prepare_statement!("update commodities set mnemonic = ?1 where guid = ?2",
+                       globals).execute(params![new_symbol.to_string(), commodity_guid])
+                               .unwrap();
 
     // Write new value to store
     update_string_column_via_path(store, path, new_symbol, STORE_SYMBOL);
 }
 
 // Called when name is edited
-fn name_edited(path: &TreePath, new_name: &str, commodities_register: &CommoditiesRegister, globals:&Globals) {
+fn name_edited(path: &TreePath, new_name: &str, commodities_register: &CommoditiesRegister,
+               globals: &Globals) {
     let store = &commodities_register.store;
     let commodity_guid: String = get_string_column_via_path(store, path, STORE_GUID);
 
     // Update the database
-    prepare_statement!("update commodities set fullname = ?1 where guid = ?2", globals)
-        .execute(params![new_name.to_string(), commodity_guid])
-        .unwrap();
+    prepare_statement!("update commodities set fullname = ?1 where guid = ?2",
+                       globals).execute(params![new_name.to_string(), commodity_guid])
+                               .unwrap();
 
     // Write new value to store
     update_string_column_via_path(store, path, new_name, STORE_NAME);
 }
 
 // Called when cusip is edited
-fn cusip_edited(path: &TreePath, new_cusip: &str, commodities_register: &CommoditiesRegister, globals:&Globals) {
+fn cusip_edited(path: &TreePath, new_cusip: &str, commodities_register: &CommoditiesRegister,
+                globals: &Globals) {
     let store = &commodities_register.store;
     let commodity_guid: String = get_string_column_via_path(store, path, STORE_GUID);
 
@@ -242,36 +242,33 @@ fn cusip_edited(path: &TreePath, new_cusip: &str, commodities_register: &Commodi
 
 // Called when 'toggled' is signalled for MM column
 fn mm_toggled(renderer: &CellRendererToggle, path: &TreePath,
-              commodities_register: &CommoditiesRegister, globals:&Globals) {
+              commodities_register: &CommoditiesRegister, globals: &Globals) {
     let store = &commodities_register.store;
     let commodity_guid: String = get_string_column_via_path(store, path, STORE_GUID);
 
     // Update the database
     prepare_statement!(TOGGLE_COMMODITY_MM_FLAG_SQL, globals).execute(params![commodity_guid])
-                                                          .unwrap();
+                                                             .unwrap();
 
     // Update the model and view
     update_boolean_column_via_path(store, path, !renderer.get_active(), STORE_MM);
 }
 
-fn populate_commodities_register_store(commodities_register: &CommoditiesRegister, globals:&Globals) {
+fn populate_commodities_register_store(commodities_register: &CommoditiesRegister,
+                                       globals: &Globals) {
     let store = &commodities_register.store;
     // Set up the query that fetches commodity data to produce the register.
     let stmt = prepare_statement!(COMMODITIES_SQL, globals);
-    let commodities_iter = stmt
-        .query_map(
-            params![],
-            |row| -> Result<(String, String, String, String, i32), rusqlite::Error> {
-                Ok((
-                    row.get(QUERY_GUID).unwrap(),
-                    row.get(QUERY_SYMBOL).unwrap(),
-                    row.get(QUERY_NAME).unwrap(),
-                    row.get(QUERY_CUSIP).unwrap(),
-                    row.get(QUERY_FLAGS).unwrap(),
-                ))
-            },
-        )
-        .unwrap();
+    let commodities_iter =
+        stmt.query_map(params![],
+                       |row| -> Result<(String, String, String, String, i32), rusqlite::Error> {
+                           Ok((row.get(QUERY_GUID).unwrap(),
+                               row.get(QUERY_SYMBOL).unwrap(),
+                               row.get(QUERY_NAME).unwrap(),
+                               row.get(QUERY_CUSIP).unwrap(),
+                               row.get(QUERY_FLAGS).unwrap()))
+                       })
+            .unwrap();
     for wrapped_result in commodities_iter {
         let (guid, symbol, name, cusip, flags) = wrapped_result.unwrap();
         // Append an empty row to the list store. Iter will point to the new row
@@ -338,7 +335,10 @@ pub fn create_commodities_register(globals: &Rc<Globals>) {
         let closure_commodities_register = commodities_register.clone();
         let closure_globals = globals.clone();
         renderer.connect_edited(move |_, path, new_symbol| {
-                    symbol_edited(&path, new_symbol, &closure_commodities_register, &closure_globals);
+                    symbol_edited(&path,
+                                  new_symbol,
+                                  &closure_commodities_register,
+                                  &closure_globals);
                 });
         renderer.set_property_editable(true);
         // Add column to the view
@@ -353,7 +353,10 @@ pub fn create_commodities_register(globals: &Rc<Globals>) {
         let closure_commodities_register = commodities_register.clone();
         let closure_globals = globals.clone();
         renderer.connect_edited(move |_, path, new_name| {
-                    name_edited(&path, new_name, &closure_commodities_register, &closure_globals);
+                    name_edited(&path,
+                                new_name,
+                                &closure_commodities_register,
+                                &closure_globals);
                 });
         renderer.set_property_editable(true);
         // Add column to the view
@@ -369,7 +372,10 @@ pub fn create_commodities_register(globals: &Rc<Globals>) {
         let closure_commodities_register = commodities_register.clone();
         let closure_globals = globals.clone();
         renderer.connect_edited(move |_, path, new_cusip| {
-                    cusip_edited(&path, new_cusip, &closure_commodities_register, &closure_globals);
+                    cusip_edited(&path,
+                                 new_cusip,
+                                 &closure_commodities_register,
+                                 &closure_globals);
                 });
         renderer.set_property_editable(true);
         // Add column to the view
@@ -384,7 +390,10 @@ pub fn create_commodities_register(globals: &Rc<Globals>) {
         let closure_commodities_register = commodities_register.clone();
         let closure_globals = globals.clone();
         renderer.connect_toggled(move |closure_renderer, path| {
-                    mm_toggled(closure_renderer, &path, &closure_commodities_register, &closure_globals);
+                    mm_toggled(closure_renderer,
+                               &path,
+                               &closure_commodities_register,
+                               &closure_globals);
                 });
         renderer.set_activatable(true);
         // Add column to the view

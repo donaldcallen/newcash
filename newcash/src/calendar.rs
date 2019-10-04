@@ -22,7 +22,8 @@ use gtk::{
 };
 use utilities::maybe_date;
 
-pub fn display_calendar(initial_date: &str, parent_window: &Window, globals:&Globals) -> Option<String> {
+pub fn display_calendar(initial_date: &str, parent_window: &Window, globals: &Globals)
+                        -> Option<String> {
     let calendar = Calendar::new();
     let dialog = Dialog::new_with_buttons(Some("Select date"),
                                           Some(parent_window),

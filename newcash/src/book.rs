@@ -63,10 +63,8 @@ fn set_up_commodity_combo_box(commodity_editing: &CommodityEditing, globals: &Gl
         "%".to_string()
     };
     let stmt = prepare_statement!(COMMODITY_INFO_SQL, globals);
-    let commodity_info_iter =
-        stmt.query_map(params![pattern_string],
-                                                               get_result!(string_string))
-                                                    .unwrap();
+    let commodity_info_iter = stmt.query_map(params![pattern_string], get_result!(string_string))
+                                  .unwrap();
     // Were we provided a child_guid and no pattern? If so, try to make the child_guid's commodity the active one.
     if commodity_editing.child_guid.is_some() && (pattern_string.len() == 1) {
         if let Some(ref child_guid) = commodity_editing.child_guid {
@@ -74,7 +72,7 @@ fn set_up_commodity_combo_box(commodity_editing: &CommodityEditing, globals: &Gl
             // Get the commodity guid from the child
             if let Ok(current_commodity_guid) =
                 prepare_statement!(GET_COMMODITY_GUID_SQL, globals).query_row(params![child_guid],
-                                                                           get_result!(string))
+                                                                              get_result!(string))
             {
                 for (i, wrapped_commodity_info) in commodity_info_iter.enumerate() {
                     let (commodity_guid, commodity_name) = wrapped_commodity_info.unwrap();
@@ -106,7 +104,7 @@ fn set_up_commodity_combo_box(commodity_editing: &CommodityEditing, globals: &Gl
     };
 }
 
-pub fn pattern_text_changed(commodity_editing: &CommodityEditing, globals:&Globals) {
+pub fn pattern_text_changed(commodity_editing: &CommodityEditing, globals: &Globals) {
     commodity_editing.commodity_item.remove_all();
     set_up_commodity_combo_box(commodity_editing, globals);
 }
@@ -185,14 +183,12 @@ pub fn new_account(globals: &Rc<Globals>) {
                                             .get_value(&parent_iter, ACCOUNT_TREE_STORE_FLAGS)
                                             .get()
                                             .unwrap();
-                    marketable_p = inherited_p(prepare_statement!(INHERITED_P_SQL,
-                                                                         globals),
+                    marketable_p = inherited_p(prepare_statement!(INHERITED_P_SQL, globals),
                                                &parent_guid,
                                                ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE)
                                    || ((flags & ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE) != 0);
                 } else {
-                    income_p = inherited_p(prepare_statement!(INHERITED_P_SQL,
-                                                                     globals),
+                    income_p = inherited_p(prepare_statement!(INHERITED_P_SQL, globals),
                                            &parent_guid,
                                            ACCOUNT_FLAG_DESCENDENTS_ARE_INCOME);
                     if income_p {
@@ -203,8 +199,7 @@ pub fn new_account(globals: &Rc<Globals>) {
                                                 .get()
                                                 .unwrap();
                         income_from_commodity_p =
-                            inherited_p(prepare_statement!(INHERITED_P_SQL,
-                                                                  globals),
+                            inherited_p(prepare_statement!(INHERITED_P_SQL, globals),
                                         &parent_guid,
                                         ACCOUNT_FLAG_DESCENDENTS_NEED_COMMODITY_LINK)
                             || ((flags & ACCOUNT_FLAG_DESCENDENTS_NEED_COMMODITY_LINK) != 0);
@@ -450,8 +445,7 @@ pub fn edit_account(globals: &Rc<Globals>) {
                                   commodity_editing.child_guid.as_ref().unwrap(),
                                   ACCOUNT_FLAG_DESCENDENTS_ARE_ASSETS);
             if asset_p {
-                marketable_p = inherited_p(prepare_statement!(INHERITED_P_SQL,
-                                                                     globals),
+                marketable_p = inherited_p(prepare_statement!(INHERITED_P_SQL, globals),
                                            commodity_editing.child_guid.as_ref().unwrap(),
                                            ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE);
                 if !marketable_p {
@@ -472,8 +466,7 @@ pub fn edit_account(globals: &Rc<Globals>) {
                     tax_deferred_item = Some(temp);
                 }
             } else {
-                income_p = inherited_p(prepare_statement!(INHERITED_P_SQL,
-                                                                 globals),
+                income_p = inherited_p(prepare_statement!(INHERITED_P_SQL, globals),
                                        commodity_editing.child_guid.as_ref().unwrap(),
                                        ACCOUNT_FLAG_DESCENDENTS_ARE_INCOME);
                 if income_p {
@@ -515,7 +508,8 @@ pub fn edit_account(globals: &Rc<Globals>) {
                 let commodity_editing_changed = commodity_editing.clone();
                 let closure_globals = globals.clone();
                 commodity_editing.pattern_item.connect_changed(move |_| {
-                                                  pattern_text_changed(&commodity_editing_changed, &closure_globals);
+                                                  pattern_text_changed(&commodity_editing_changed,
+                                                                       &closure_globals);
                                               });
 
                 create_and_enter_dialog_item(&grid,
@@ -656,9 +650,8 @@ pub fn copy_account_value_to_clipboard(column: i32, error_message: &str, pathp: 
                 true
             } {
                 // The requested path isn't in the hashtable. Enter it and call the function again.
-                let path: String = guid_to_path(prepare_statement!(GUID_TO_PATH_SQL,
-                                                                          globals),
-                                                &column_value);
+                let path: String =
+                    guid_to_path(prepare_statement!(GUID_TO_PATH_SQL, globals), &column_value);
                 // This has to be done before the insert, because the insert requires ownership of 'path'
                 Clipboard::get(&Atom::intern("CLIPBOARD")).set_text(path.as_str());
                 globals.guid_to_full_path
@@ -698,8 +691,8 @@ pub fn reparent_account(globals: &Globals) {
                                             .get()
                                             .unwrap();
             prepare_statement!(REPARENT_ACCOUNT_SQL, globals).execute(params![parent_guid,
-                                                                           account_guid])
-                                                          .unwrap();
+                                                                              account_guid])
+                                                             .unwrap();
             // Delete from guid-to-full-path hash table
             globals.guid_to_full_path.borrow_mut().remove(&account_guid);
             refresh_accounts_window(globals);
@@ -799,7 +792,7 @@ If there are child accounts, those must be deleted before attempting to delete t
             } else {
                 // Delete the account
                 prepare_statement!(DELETE_ACCOUNT_SQL, globals).execute(params![account_guid])
-                                                            .unwrap();
+                                                               .unwrap();
                 // Delete from guid-to-full-path hash table
                 globals.guid_to_full_path.borrow_mut().remove(&account_guid);
                 // And delete from guid_processed
