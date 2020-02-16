@@ -1,23 +1,26 @@
 #!/bin/dash
 
 cd cambridge_trust_importer/
-cargo +nightly fmt
+cargo fmt
 cd ..
 cd composite_register/
-cargo +nightly fmt
+cargo fmt
 cd ..
 cd newcash/
-cargo +nightly fmt
+cargo fmt
 cd ..
-cd report_generator/
-cargo +nightly fmt
-cd ..
+cd report_generator/balance_sheet_income_expense_statement
+cargo fmt
+cd ../..
+cd report_generator/investments
+cargo fmt
+cd ../..
 cd rust_library/
-cargo +nightly fmt
+cargo fmt
 cd ..
 cd vanguard_importer/
-cargo +nightly fmt
+cargo fmt
 cd ..
 cd verifier/
-cargo +nightly fmt
+cargo fmt
 cd ..
