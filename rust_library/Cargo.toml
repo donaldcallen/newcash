@@ -4,4 +4,4 @@ version = "0.1.0"
 authors = ["Don Allen <donaldcallen@gmail.com>"]
 
 [dependencies]
-rusqlite = "0.20.0"
+rusqlite = "0.21.0"
