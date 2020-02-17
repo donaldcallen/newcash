@@ -20,9 +20,9 @@ M4 = \
 	newcashConvertGnucashDatabase \
 	newcashCreateDatabase \
 	newcashIRR \
-	newcashLoadQuotes  \
+	newcashLoadQuotes \
 	newcashReconciliationAid \
-	newcashScheduledLoanPayment \
+	newcashScheduledLoanPayment
 
 all: ${M4}
 
@@ -32,7 +32,7 @@ all: ${M4}
 clean:
 	rm ${M4}
 
-install:
+install: all
 	echo Installing executable file to ${BIN}
 	chmod +x ${EXE}
 	cp -f ${EXE} ${BIN}
