@@ -117,7 +117,12 @@ but the commodity name is not the same as the account name.  Is this intentional
                     // Yes
                     self.check_and_repair_commodity_link(account);
                     // Is this a money-market fund?
-                    if self.check_money_market.query_row(params!(account.guid), get_result!(i32)).unwrap() != 0 {
+                    if self
+                        .check_money_market
+                        .query_row(params!(account.guid), get_result!(i32))
+                        .unwrap()
+                        != 0
+                    {
                         // Make sure all money market account splits have identical quantities and values
                         self.fix_money_market_quantities.execute(params![account.guid]).unwrap();
                     }

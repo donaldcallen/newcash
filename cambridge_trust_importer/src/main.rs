@@ -4,11 +4,39 @@ extern crate rust_library;
 
 use rusqlite::{params, Connection, Statement};
 use rust_library::queries::NEW_UUID_SQL;
-use std::cell::RefCell;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
+
+struct Statements<'l> {
+    begin_transaction_stmt: Statement<'l>,
+    end_transaction_stmt: Statement<'l>,
+    find_asset_account_guid_from_grandparent_stmt: Statement<'l>,
+    find_asset_account_guid_from_parent_stmt: Statement<'l>,
+    find_capital_gain_account_guid_from_parent_stmt: Statement<'l>,
+    insert_cash_split_stmt: Statement<'l>,
+    insert_income_target_split_stmt: Statement<'l>,
+    insert_income_transaction_stmt: Statement<'l>,
+    insert_trade_target_split_stmt: Statement<'l>,
+    insert_trade_transaction_stmt: Statement<'l>,
+    new_guid_stmt: Statement<'l>,
+}
+
+struct GUIDS {
+    asset_accounts_ancestor_guids: [&'static str; 2],
+    cash_account_guid: &'static str,
+    capital_gain_account_ancestor_guids: [&'static str; 2],
+    commissions_account_guid: &'static str,
+    distribution_account_guid: &'static str,
+    dividends_parent_guid: &'static str,
+    federal_fiduciary_tax_account_guid: &'static str,
+    state_fiduciary_tax_account_guid: &'static str,
+    foreign_tax_account_guid: &'static str,
+    interest_parent_guid: &'static str,
+    management_fees_account_guid: &'static str,
+    money_market_account_guid: &'static str,
+}
 
 fn main() {
     //:Assets:Bank accounts:Cambridge Trust Joint Savings
@@ -73,45 +101,45 @@ fn main() {
     const BEGIN_TRANSACTION_SQL: &str = "begin transaction";
     const END_TRANSACTION_SQL: &str = "end transaction";
     const FIND_ASSET_GUID_FROM_GRANDPARENT_SQL: &str = "
-    select a.guid from accounts p, accounts a, commodities c
-    where p.parent_guid=?1 and a.parent_guid=p.guid and c.cusip=?2
-        and a.commodity_guid=c.guid";
+        select a.guid from accounts p, accounts a, commodities c
+        where p.parent_guid=?1 and a.parent_guid=p.guid and c.cusip=?2
+            and a.commodity_guid=c.guid";
     const FIND_ASSET_GUID_FROM_PARENT_SQL: &str = "
-    select a.guid from accounts a, commodities c
-    where a.parent_guid=?1 and c.cusip=?2 and a.commodity_guid=c.guid";
+        select a.guid from accounts a, commodities c
+        where a.parent_guid=?1 and c.cusip=?2 and a.commodity_guid=c.guid";
     //?1 is capitalGainAccountAncestorGuid, ?2 is cusip
     const FIND_CAPITAL_GAIN_GUID_FROM_PARENT_SQL: &str = "
-    select a.guid from accounts a, commodities c
-    where a.parent_guid=?1 and c.cusip=?2 and a.commodity_guid=c.guid";
+        select a.guid from accounts a, commodities c
+        where a.parent_guid=?1 and c.cusip=?2 and a.commodity_guid=c.guid";
     const INSERT_CASH_SPLIT_SQL: &str = concat!(
         "
-    insert into splits (guid, tx_guid, account_guid, memo, flags, value, quantity)
-                values (",
+        insert into splits (guid, tx_guid, account_guid, memo, flags, value, quantity)
+                    values (",
         constants!(NEW_UUID),
         ", ?1, ?2, '', 0, ?3, 0.0)"
     );
     const INSERT_INCOME_TRANSACTION_SQL: &str = "
-    insert into transactions (guid, num, post_date, enter_date, description)
-                      values (?1, '',  ?2||' 12:00:00', datetime('NOW', 'localtime'), ?3)";
+        insert into transactions (guid, num, post_date, enter_date, description)
+                        values (?1, '',  ?2||' 12:00:00', datetime('NOW', 'localtime'), ?3)";
     // ?1 is transaction_guid, ?2 is dividends_parent_guid, ?3 is cusip, and ?4 is net_cash
     const INSERT_INCOME_TARGET_SPLIT_SQL: &str = concat!(
         "
-    insert into splits (guid, tx_guid, account_guid, memo, flags, value, quantity)
-                values (",
+        insert into splits (guid, tx_guid, account_guid, memo, flags, value, quantity)
+                    values (",
         constants!(NEW_UUID),
         ", ?1,
-                    (select a.guid from accounts a, commodities c where a.parent_guid=?2
-                        and c.cusip=?3 and a.commodity_guid=c.guid), '', 0, -?4, 0)"
+                        (select a.guid from accounts a, commodities c where a.parent_guid=?2
+                            and c.cusip=?3 and a.commodity_guid=c.guid), '', 0, -?4, 0)"
     );
     //?1 is transaction_guid, ?2 is settlement_date, ?3 is description
     const INSERT_TRADE_TRANSACTION_SQL: &str = "
-    insert into transactions (guid, num, post_date, enter_date, description)
-                      values (?1, '',  ?2, datetime('NOW', 'localtime'), ?3)";
+        insert into transactions (guid, num, post_date, enter_date, description)
+                        values (?1, '',  ?2, datetime('NOW', 'localtime'), ?3)";
     //?1 is transaction_guid, ?2 is the split account guid, ?3 is the value, ?4 is the quantity
     const INSERT_TRADE_TARGET_SPLIT_SQL: &str = concat!(
         "
-    insert into splits (guid, tx_guid, account_guid, memo, flags, value, quantity)
-                values (",
+        insert into splits (guid, tx_guid, account_guid, memo, flags, value, quantity)
+                    values (",
         constants!(NEW_UUID),
         ", ?1, ?2, '', 0, ?3, ?4)"
     );
@@ -186,85 +214,97 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
         };
     }
 
-    let asset_accounts_ancestor_guids = [
-        choose_guid!(MBS_EQUITIES_ANCESTOR, HWS_EQUITIES_ANCESTOR),
-        choose_guid!(MBS_BONDS_ANCESTOR, HWS_BONDS_ANCESTOR),
-    ];
-    let begin_transaction_stmt: RefCell<Statement> =
-        RefCell::new(db.prepare(BEGIN_TRANSACTION_SQL).unwrap());
-    let cash_account_guid = choose_guid!(MBS_CASH, HWS_CASH);
-    let capital_gain_account_ancestor_guids = [
-        choose_guid!(MBS_LONG_TERM_CAPITAL_GAINS, HWS_LONG_TERM_CAPITAL_GAINS),
-        choose_guid!(MBS_SHORT_TERM_CAPITAL_GAINS, HWS_SHORT_TERM_CAPITAL_GAINS),
-    ];
-    let commissions_account_guid = choose_guid!(MBS_COMMISSIONS, HWS_COMMISSIONS);
-    let distribution_account_guid = choose_guid!(MBS_DISTRIBUTION, HWS_DISTRIBUTION);
-    let dividends_parent_guid = choose_guid!(MBS_DIVIDENDS_PARENT, HWS_DIVIDENDS_PARENT);
-    let end_transaction_stmt: RefCell<Statement> =
-        RefCell::new(db.prepare(END_TRANSACTION_SQL).unwrap());
-    let federal_fiduciary_tax_account_guid =
-        choose_guid!(MBS_FEDERAL_FIDUCIARY_TAX, HWS_FEDERAL_FIDUCIARY_TAX);
-    let state_fiduciary_tax_account_guid =
-        choose_guid!(MBS_STATE_FIDUCIARY_TAX, HWS_STATE_FIDUCIARY_TAX);
-    let mut find_asset_account_guid_from_grandparent_stmt =
-        db.prepare(FIND_ASSET_GUID_FROM_GRANDPARENT_SQL).unwrap();
-    let mut find_asset_account_guid_from_parent_stmt =
-        db.prepare(FIND_ASSET_GUID_FROM_PARENT_SQL).unwrap();
-    let mut find_capital_gain_account_guid_from_parent_stmt =
-        db.prepare(FIND_CAPITAL_GAIN_GUID_FROM_PARENT_SQL).unwrap();
-    let foreign_tax_account_guid = choose_guid!(MBS_FOREIGN_TAX, HWS_FOREIGN_TAX);
-    let mut insert_cash_split_stmt = db.prepare(INSERT_CASH_SPLIT_SQL).unwrap();
-    let mut insert_income_target_split_stmt = db.prepare(INSERT_INCOME_TARGET_SPLIT_SQL).unwrap();
-    let insert_income_transaction_stmt: RefCell<Statement> =
-        RefCell::new(db.prepare(INSERT_INCOME_TRANSACTION_SQL).unwrap());
-    let insert_trade_target_split_stmt: RefCell<Statement> =
-        RefCell::new(db.prepare(INSERT_TRADE_TARGET_SPLIT_SQL).unwrap());
-    let mut insert_trade_transaction_stmt = db.prepare(INSERT_TRADE_TRANSACTION_SQL).unwrap();
-    let interest_parent_guid = choose_guid!(MBS_INTEREST_PARENT, HWS_INTEREST_PARENT);
-    let management_fees_account_guid = choose_guid!(MBS_MANAGEMENT_FEES, HWS_MANAGEMENT_FEES);
-    let money_market_account_guid = choose_guid!(MBS_MONEY_MARKET, HWS_MONEY_MARKET);
-    let new_guid_stmt: RefCell<Statement> = RefCell::new(db.prepare(NEW_UUID_SQL).unwrap());
+    let mut statements = Statements {
+        begin_transaction_stmt: db.prepare(BEGIN_TRANSACTION_SQL).unwrap(),
+        end_transaction_stmt: db.prepare(END_TRANSACTION_SQL).unwrap(),
+        find_asset_account_guid_from_grandparent_stmt: db
+            .prepare(FIND_ASSET_GUID_FROM_GRANDPARENT_SQL)
+            .unwrap(),
+        find_asset_account_guid_from_parent_stmt: db
+            .prepare(FIND_ASSET_GUID_FROM_PARENT_SQL)
+            .unwrap(),
+        find_capital_gain_account_guid_from_parent_stmt: db
+            .prepare(FIND_CAPITAL_GAIN_GUID_FROM_PARENT_SQL)
+            .unwrap(),
+        insert_cash_split_stmt: db.prepare(INSERT_CASH_SPLIT_SQL).unwrap(),
+        insert_income_target_split_stmt: db.prepare(INSERT_INCOME_TARGET_SPLIT_SQL).unwrap(),
+        insert_income_transaction_stmt: db.prepare(INSERT_INCOME_TRANSACTION_SQL).unwrap(),
+        insert_trade_target_split_stmt: db.prepare(INSERT_TRADE_TARGET_SPLIT_SQL).unwrap(),
+        insert_trade_transaction_stmt: db.prepare(INSERT_TRADE_TRANSACTION_SQL).unwrap(),
+        new_guid_stmt: db.prepare(NEW_UUID_SQL).unwrap(),
+    };
+
+    let guids = GUIDS {
+        asset_accounts_ancestor_guids: [
+            choose_guid!(MBS_EQUITIES_ANCESTOR, HWS_EQUITIES_ANCESTOR),
+            choose_guid!(MBS_BONDS_ANCESTOR, HWS_BONDS_ANCESTOR),
+        ],
+        cash_account_guid: choose_guid!(MBS_CASH, HWS_CASH),
+        capital_gain_account_ancestor_guids: [
+            choose_guid!(MBS_LONG_TERM_CAPITAL_GAINS, HWS_LONG_TERM_CAPITAL_GAINS),
+            choose_guid!(MBS_SHORT_TERM_CAPITAL_GAINS, HWS_SHORT_TERM_CAPITAL_GAINS),
+        ],
+        commissions_account_guid: choose_guid!(MBS_COMMISSIONS, HWS_COMMISSIONS),
+        distribution_account_guid: choose_guid!(MBS_DISTRIBUTION, HWS_DISTRIBUTION),
+        dividends_parent_guid: choose_guid!(MBS_DIVIDENDS_PARENT, HWS_DIVIDENDS_PARENT),
+        federal_fiduciary_tax_account_guid: choose_guid!(
+            MBS_FEDERAL_FIDUCIARY_TAX,
+            HWS_FEDERAL_FIDUCIARY_TAX
+        ),
+        state_fiduciary_tax_account_guid: choose_guid!(
+            MBS_STATE_FIDUCIARY_TAX,
+            HWS_STATE_FIDUCIARY_TAX
+        ),
+        foreign_tax_account_guid: choose_guid!(MBS_FOREIGN_TAX, HWS_FOREIGN_TAX),
+        interest_parent_guid: choose_guid!(MBS_INTEREST_PARENT, HWS_INTEREST_PARENT),
+        management_fees_account_guid: choose_guid!(MBS_MANAGEMENT_FEES, HWS_MANAGEMENT_FEES),
+        money_market_account_guid: choose_guid!(MBS_MONEY_MARKET, HWS_MONEY_MARKET),
+    };
 
     // If we know the CUSIP of the commodity paying the dividend, and we know the
     // guid of the parent of the dividend-paying accounts, then
     // select guid from accounts a, commodities c where a.parent_guid = $2
     // and c.cusip=$1 and a.commodity_guid = c.guid
     // will deliver the account guid of the income account.
-    let mut process_income =
-        |split_line: &Vec<&str>, description: &str, income_parent_guid: &str| {
-            let cusip = split_line[CUSIP_INDEX];
-            let settlement_date = convert_to_iso9601(split_line[SETTLEMENT_DATE_INDEX]);
-            let net_cash: f64 = split_line[NET_CASH_INDEX].parse().unwrap();
-            begin_transaction_stmt.borrow_mut().execute(params![]).unwrap();
-            // Generate a guid for the new transaction
-            let transaction_guid =
-                new_guid_stmt.borrow_mut().query_row(params![], get_result!(string)).unwrap();
-            // Insert the transaction
-            insert_income_transaction_stmt
-                .borrow_mut()
-                .execute(params![transaction_guid, settlement_date, description])
-                .unwrap();
-            // And the splits
-            // This statement can fail if the dividend account hasn't been set up.
-            // So don't use unwrap,
-            // which will fail in an uninformative way. Issue specific error
-            // message in case of failure
-            if insert_income_target_split_stmt
-                .execute(params![transaction_guid, income_parent_guid, cusip, net_cash])
-                .is_err()
-            {
-                panic!(
-                    "Unable to process income with description: {}.
+    fn process_income(
+        split_line: &Vec<&str>, description: &str, income_parent_guid: &str,
+        statements: &mut Statements, guids: &GUIDS,
+    ) {
+        let cusip = split_line[CUSIP_INDEX];
+        let settlement_date = convert_to_iso9601(split_line[SETTLEMENT_DATE_INDEX]);
+        let net_cash: f64 = split_line[NET_CASH_INDEX].parse().unwrap();
+        statements.begin_transaction_stmt.execute(params![]).unwrap();
+        // Generate a guid for the new transaction
+        let transaction_guid =
+            statements.new_guid_stmt.query_row(params![], get_result!(string)).unwrap();
+        // Insert the transaction
+        statements
+            .insert_income_transaction_stmt
+            .execute(params![transaction_guid, settlement_date, description])
+            .unwrap();
+        // And the splits
+        // This statement can fail if the dividend account hasn't been set up.
+        // So don't use unwrap,
+        // which will fail in an uninformative way. Issue specific error
+        // message in case of failure
+        if statements
+            .insert_income_target_split_stmt
+            .execute(params![transaction_guid, income_parent_guid, cusip, net_cash])
+            .is_err()
+        {
+            panic!(
+                "Unable to process income with description: {}.
          Check that the CUSIP of the commodity is correct and that the income account exists
          and points correctly to the commodity.",
-                    description
-                );
-            }
-            insert_cash_split_stmt
-                .execute(params![transaction_guid, cash_account_guid, net_cash])
-                .unwrap();
-            end_transaction_stmt.borrow_mut().execute(params![]).unwrap();
-        };
+                description
+            );
+        }
+        statements
+            .insert_cash_split_stmt
+            .execute(params![transaction_guid, guids.cash_account_guid, net_cash])
+            .unwrap();
+        statements.end_transaction_stmt.execute(params![]).unwrap();
+    };
 
     // For equity transactions, we need three splits, three accounts (apart from the capital gain
     // account needed for sales): the account for the security, the cash account,
@@ -273,7 +313,9 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
     // the stock accounts are usually organized in sub-accounts -- US, Europe, Asia, etc.),
     // then a simple query will deliver the account guid of the asset account for the
     // security we are buying, assuming it points correctly at the commodity.
-    let mut process_trade = |split_line: &Vec<&str>, description: &str| {
+    fn process_trade(
+        split_line: &Vec<&str>, description: &str, statements: &mut Statements, guids: &GUIDS,
+    ) {
         let cusip = split_line[CUSIP_INDEX];
         let settlement_date = convert_to_iso9601(split_line[SETTLEMENT_DATE_INDEX]);
         let principal_cash: f64 = split_line[PRINCIPAL_CASH_INDEX].parse().unwrap();
@@ -283,13 +325,15 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
 
         // Determine the asset account guid from ancestor guids.
         // The ancestor guids may be parents or grandparents; both are tried.
-        for asset_accounts_ancestor_guid in asset_accounts_ancestor_guids.iter() {
-            if let Ok(temp) = find_asset_account_guid_from_grandparent_stmt
+        for asset_accounts_ancestor_guid in guids.asset_accounts_ancestor_guids.iter() {
+            if let Ok(temp) = statements
+                .find_asset_account_guid_from_grandparent_stmt
                 .query_row(params![asset_accounts_ancestor_guid, cusip], get_result!(string))
             {
                 asset_account_guid = Some(temp);
                 break;
-            } else if let Ok(temp) = find_asset_account_guid_from_parent_stmt
+            } else if let Ok(temp) = statements
+                .find_asset_account_guid_from_parent_stmt
                 .query_row(params![asset_accounts_ancestor_guid, cusip], get_result!(string))
             {
                 asset_account_guid = Some(temp);
@@ -308,19 +352,19 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
         // CT report, that one is used. If not, I try the second guid. If that one fails, too,
         // then the program fails.
         let unit_price: f64 = split_line[UNIT_PRICE_INDEX].parse().unwrap();
-        begin_transaction_stmt.borrow_mut().execute(params![]).unwrap();
+        statements.begin_transaction_stmt.execute(params![]).unwrap();
         // Generate a guid for the new transaction
         let transaction_guid =
-            new_guid_stmt.borrow_mut().query_row(params![], get_result!(string)).unwrap();
+            statements.new_guid_stmt.query_row(params![], get_result!(string)).unwrap();
         // Insert the transaction
-        insert_trade_transaction_stmt
+        statements
+            .insert_trade_transaction_stmt
             .execute(params![transaction_guid, settlement_date, description.to_string()])
             .unwrap();
         // And the splits
         let value: f64 = principal_shares * unit_price;
-        let mut borrowed_insert_trade_target_split_stmt =
-            insert_trade_target_split_stmt.borrow_mut();
-        borrowed_insert_trade_target_split_stmt
+        statements
+            .insert_trade_target_split_stmt
             .execute(params![
                 transaction_guid,
                 asset_account_guid.as_ref().unwrap(),
@@ -328,13 +372,15 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
                 principal_shares
             ])
             .unwrap();
-        borrowed_insert_trade_target_split_stmt
-            .execute(params![transaction_guid, cash_account_guid, principal_cash, 0.0])
+        statements
+            .insert_trade_target_split_stmt
+            .execute(params![transaction_guid, guids.cash_account_guid, principal_cash, 0.0])
             .unwrap();
-        borrowed_insert_trade_target_split_stmt
+        statements
+            .insert_trade_target_split_stmt
             .execute(params![
                 transaction_guid,
-                commissions_account_guid,
+                guids.commissions_account_guid,
                 -principal_cash - value,
                 0.0
             ])
@@ -342,15 +388,17 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
         // Sale?
         if principal_shares < 0.0 {
             let capital_gain_account_guid: String = if let Ok(temp) =
-                find_capital_gain_account_guid_from_parent_stmt.query_row(
-                    params![capital_gain_account_ancestor_guids[0], cusip],
+                statements.find_capital_gain_account_guid_from_parent_stmt.query_row(
+                    params![guids.capital_gain_account_ancestor_guids[0], cusip],
                     get_result!(string),
                 ) {
                 temp
-            } else if let Ok(temp) = find_capital_gain_account_guid_from_parent_stmt.query_row(
-                params![capital_gain_account_ancestor_guids[1], cusip],
-                get_result!(string),
-            ) {
+            } else if let Ok(temp) =
+                statements.find_capital_gain_account_guid_from_parent_stmt.query_row(
+                    params![guids.capital_gain_account_ancestor_guids[1], cusip],
+                    get_result!(string),
+                )
+            {
                 temp
             } else {
                 panic!(
@@ -360,40 +408,44 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
                     description
                 );
             };
-            borrowed_insert_trade_target_split_stmt
+            statements
+                .insert_trade_target_split_stmt
                 .execute(params![transaction_guid, asset_account_guid.unwrap(), gain_loss, 0.0])
                 .unwrap();
-            borrowed_insert_trade_target_split_stmt
+            statements
+                .insert_trade_target_split_stmt
                 .execute(params![transaction_guid, capital_gain_account_guid, -gain_loss, 0.0])
                 .unwrap();
         };
-        end_transaction_stmt.borrow_mut().execute(params![]).unwrap();
+        statements.end_transaction_stmt.execute(params![]).unwrap();
     };
 
-    let process_disbursement =
-        |split_line: &Vec<&str>, description: &str, expense_account_guid: &str| {
-            let settlement_date = convert_to_iso9601(split_line[SETTLEMENT_DATE_INDEX]);
-            let net_cash: f64 = split_line[NET_CASH_INDEX].parse().unwrap();
-            begin_transaction_stmt.borrow_mut().execute(params![]).unwrap();
-            // Generate a guid for the new transaction
-            let transaction_guid =
-                new_guid_stmt.borrow_mut().query_row(params![], get_result!(string)).unwrap();
-            // Insert the transaction
-            insert_income_transaction_stmt
-                .borrow_mut()
-                .execute(params![transaction_guid, settlement_date, description])
-                .unwrap();
-            // And the splits
-            let mut borrowed_insert_trade_target_split_stmt =
-                insert_trade_target_split_stmt.borrow_mut();
-            borrowed_insert_trade_target_split_stmt
-                .execute(params![transaction_guid, expense_account_guid, -net_cash, 0.0])
-                .unwrap();
-            borrowed_insert_trade_target_split_stmt
-                .execute(params![transaction_guid, cash_account_guid, net_cash, 0.0])
-                .unwrap();
-            end_transaction_stmt.borrow_mut().execute(params![]).unwrap();
-        };
+    fn process_disbursement(
+        split_line: &Vec<&str>, description: &str, expense_account_guid: &str,
+        statements: &mut Statements, guids: &GUIDS,
+    ) {
+        let settlement_date = convert_to_iso9601(split_line[SETTLEMENT_DATE_INDEX]);
+        let net_cash: f64 = split_line[NET_CASH_INDEX].parse().unwrap();
+        statements.begin_transaction_stmt.execute(params![]).unwrap();
+        // Generate a guid for the new transaction
+        let transaction_guid =
+            statements.new_guid_stmt.query_row(params![], get_result!(string)).unwrap();
+        // Insert the transaction
+        statements
+            .insert_income_transaction_stmt
+            .execute(params![transaction_guid, settlement_date, description])
+            .unwrap();
+        // And the splits
+        statements
+            .insert_trade_target_split_stmt
+            .execute(params![transaction_guid, expense_account_guid, -net_cash, 0.0])
+            .unwrap();
+        statements
+            .insert_trade_target_split_stmt
+            .execute(params![transaction_guid, guids.cash_account_guid, net_cash, 0.0])
+            .unwrap();
+        statements.end_transaction_stmt.execute(params![]).unwrap();
+    };
 
     loop {
         ct_buffer.clear();
@@ -412,10 +464,22 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
                     let description_length = description.len();
                     let transaction_type = split_line[TRANSACTION_TYPE_INDEX];
                     match transaction_type {
-                        "DIV" => process_income(&split_line, &description, &dividends_parent_guid),
-                        "INT" => process_income(&split_line, &description, &interest_parent_guid),
-                        "BUY" => process_trade(&split_line, &description),
-                        "SEL" => process_trade(&split_line, &description),
+                        "DIV" => process_income(
+                            &split_line,
+                            &description,
+                            &guids.dividends_parent_guid,
+                            &mut statements,
+                            &guids,
+                        ),
+                        "INT" => process_income(
+                            &split_line,
+                            &description,
+                            &guids.interest_parent_guid,
+                            &mut statements,
+                            &guids,
+                        ),
+                        "BUY" => process_trade(&split_line, &description, &mut statements, &guids),
+                        "SEL" => process_trade(&split_line, &description, &mut statements, &guids),
                         "DIS" => match description {
                             "MANAGEMENT COMPENSATION CAMBRIDGE TRUST COMPANY "
                             | "FIDUCIARY FEE CAMBRIDGE TRUST COMPANY "
@@ -423,13 +487,17 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
                             | "TAX LETTER FEE" => process_disbursement(
                                 &split_line,
                                 &description,
-                                &management_fees_account_guid,
+                                &guids.management_fees_account_guid,
+                                &mut statements,
+                                &guids,
                             ),
-                            "DISTRIBUTION TO SAVINGS ACCOUNT AT CAMBRIDGE TRUST COMPANY NAME \
-                             OF JOAN S ALLEN " => process_disbursement(
+                            "DISTRIBUTION TO SAVINGS ACCOUNT AT CAMBRIDGE TRUST COMPANY \
+                                 NAME OF JOAN S ALLEN " => process_disbursement(
                                 &split_line,
                                 &description,
-                                &distribution_account_guid,
+                                &guids.distribution_account_guid,
+                                &mut statements,
+                                &guids,
                             ),
                             _ => {
                                 if description_length >= 20
@@ -438,7 +506,9 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
                                     process_disbursement(
                                         &split_line,
                                         &description,
-                                        &foreign_tax_account_guid,
+                                        &guids.foreign_tax_account_guid,
+                                        &mut statements,
+                                        &guids,
                                     );
                                 } else if description_length >= 14
                                     && &description[0..14] == "DEPOSITORY FEE"
@@ -446,58 +516,72 @@ Usage: newcashCambridgeTrustImporter pathToCambridgeTrustFile pathToNewcashDatab
                                     process_disbursement(
                                         &split_line,
                                         &description,
-                                        &management_fees_account_guid,
+                                        &guids.management_fees_account_guid,
+                                        &mut statements,
+                                        &guids,
                                     );
                                 } else if (description_length >= 53
                                     && &description[0..53]
-                                        == "ESTIMATED FIDUCIARY INCOME TAX UNITED STATES \
-                                            TREASURY")
+                                        == "ESTIMATED FIDUCIARY INCOME TAX UNITED \
+                                                      STATES TREASURY")
                                     || (description_length >= 51
                                         && &description[0..51]
-                                            == "BALANCE FIDUCIARY INCOME TAX UNITED STATES \
-                                                TREASURY")
+                                            == "BALANCE FIDUCIARY INCOME TAX UNITED \
+                                                         STATES TREASURY")
                                 {
                                     process_disbursement(
                                         &split_line,
                                         &description,
-                                        &federal_fiduciary_tax_account_guid,
+                                        &guids.federal_fiduciary_tax_account_guid,
+                                        &mut statements,
+                                        &guids,
                                     );
                                 } else if (description_length >= 60
                                     && &description[0..60]
-                                        == "ESTIMATED FIDUCIARY INCOME TAX COMMONWEALTH OF \
-                                            MASSACHUSETTS")
+                                        == "ESTIMATED FIDUCIARY INCOME TAX COMMONWEALTH \
+                                                      OF MASSACHUSETTS")
                                     || (description_length >= 58
                                         && &description[0..58]
-                                            == "BALANCE FIDUCIARY INCOME TAX COMMONWEALTH OF \
-                                                MASSACHUSETTS")
+                                            == "BALANCE FIDUCIARY INCOME TAX \
+                                                         COMMONWEALTH OF MASSACHUSETTS")
                                 {
                                     process_disbursement(
                                         &split_line,
                                         &description,
-                                        &state_fiduciary_tax_account_guid,
+                                        &guids.state_fiduciary_tax_account_guid,
+                                        &mut statements,
+                                        &guids,
                                     );
                                 } else {
                                     eprintln!(
-                                        "Warning: unrecognized disbursement, transaction \
-                                         description {}",
+                                        "Warning: unrecognized disbursement, \
+                                                   transaction description {}",
                                         description
                                     );
                                 }
                             }
                         },
-                        "ACI" => process_income(&split_line, &description, &interest_parent_guid),
+                        "ACI" => process_income(
+                            &split_line,
+                            &description,
+                            &guids.interest_parent_guid,
+                            &mut statements,
+                            &guids,
+                        ),
                         _ => {
                             if description.trim() == "NET CASH MANAGEMENT" {
                                 process_disbursement(
                                     &split_line,
                                     &description,
-                                    &money_market_account_guid,
+                                    &guids.money_market_account_guid,
+                                    &mut statements,
+                                    &guids,
                                 );
                             } else {
                                 eprintln!(
                                     "\
-                                     Warning: unrecognized income transaction, transaction \
-                                     description {}",
+                                           Warning: unrecognized income transaction, transaction \
+                                           description {}",
                                     description
                                 );
                             }
