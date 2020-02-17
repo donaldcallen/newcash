@@ -1,0 +1,12 @@
+[package]
+	name = "balance_sheet_income_expense_statement"
+	version = "0.1.0"
+	authors = ["Don Allen <donaldcallen@gmail.com>"]
+
+[dependencies]
+	rust_library={path="../../rust_library"}
+	libc = "0.2.66"
+    time = "0.2.1"
+	[dependencies.rusqlite]
+		version = "0.21.0"
+		features = ["load_extension"]
