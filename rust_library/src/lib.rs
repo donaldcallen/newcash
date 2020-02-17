@@ -7,6 +7,9 @@ macro_rules! constants {
     (ACCOUNT_FLAG_DESCENDENTS_ARE_ASSETS) => {
         "(1<<2)"
     };
+    (ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE) => {
+        "1"
+    };
     (ACCOUNT_FLAG_DESCENDENTS_ARE_INCOME) => {
         "(1<<6)"
     };
@@ -103,14 +106,18 @@ pub fn path_to_guid(db: &Connection, account_path: &str) -> String {
     for name in namelist {
         from_clause.push_str(&format!(", accounts a{}", count));
         if count == length {
-            where_clause.push_str(&format!(" and a{}.name='{}' and a{}.parent_guid=(select \
-                                            root_account_guid from book)",
-                                           count, name, count));
+            where_clause.push_str(&format!(
+                " and a{}.name='{}' and a{}.parent_guid=(select \
+                 root_account_guid from book)",
+                count, name, count
+            ));
             break;
         } else {
             let new_count = count + 1;
-            where_clause.push_str(&format!(" and a{}.name='{}' and a{}.parent_guid=a{}.guid",
-                                           count, name, count, new_count));
+            where_clause.push_str(&format!(
+                " and a{}.name='{}' and a{}.parent_guid=a{}.guid",
+                count, name, count, new_count
+            ));
             count = new_count;
         }
     }
@@ -119,16 +126,17 @@ pub fn path_to_guid(db: &Connection, account_path: &str) -> String {
     let final_from_clause = from_clause.trim_start_matches(',');
     let (_, final_where_clause) = where_clause.split_at(5);
     // Assemble and execute the query
-    db.query_row(format!("select a1.guid from{} where {}",
-                         final_from_clause, final_where_clause).as_str(),
-                 params![],
-                 |row| {
-                     Ok({
-                         let result: String = row.get(0).unwrap();
-                         result
-                     })
-                 })
-      .unwrap()
+    db.query_row(
+        format!("select a1.guid from{} where {}", final_from_clause, final_where_clause).as_str(),
+        params![],
+        |row| {
+            Ok({
+                let result: String = row.get(0).unwrap();
+                result
+            })
+        },
+    )
+    .unwrap()
 }
 
 // Takes GUID_TO_PATH_SQL prepared
@@ -142,11 +150,13 @@ pub fn guid_to_path(stmt: &mut Statement, account_guid: &str) -> String {
 
     loop {
         let maybe_account = stmt.query_row(&[&current_guid], |row| {
-                                    Ok({
-                                        Account { name: row.get(0).unwrap(),
-                                                  guid: row.get(1).unwrap() }
-                                    })
-                                });
+            Ok({
+                Account {
+                    name: row.get(0).unwrap(),
+                    guid: row.get(1).unwrap(),
+                }
+            })
+        });
         match maybe_account {
             Ok(a) => {
                 path = format!("{}:{}", a.name, path);
@@ -168,11 +178,13 @@ pub fn inherited_p(stmt: &mut Statement, account_guid: &str, flag_bit: i32) -> b
     // Here a1 is the parent account, a2 is the account we are starting from
     loop {
         let maybe_account = stmt.query_row(&[&child_guid], |row| {
-                                    Ok({
-                                        Account { guid: row.get(0).unwrap(),
-                                                  flags: row.get(1).unwrap() }
-                                    })
-                                });
+            Ok({
+                Account {
+                    guid: row.get(0).unwrap(),
+                    flags: row.get(1).unwrap(),
+                }
+            })
+        });
         match maybe_account {
             Ok(p) => {
                 if (p.flags & flag_bit) != 0 {
