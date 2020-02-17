@@ -1,7 +1,12 @@
-m4_include(`../newcash.m4')m4_dnl
 #!/usr/bin/env tclsh
+m4_include(`newcash.m4')m4_dnl
 
 package require sqlite3
+
+proc debugit {sql} {
+    puts "debug: $sql"
+    puts [db errorcode]
+}
 
 ## Constants
 set quoteFileIndex 0
@@ -23,18 +28,21 @@ set quoteFile [open $quoteFilePath r]
 
 ## Open the database
 sqlite3 db $dbFilePath
+#db trace debugit
 
 while {[gets $quoteFile row] >= 0} {
     set splitRow [split $row \t]
     set symbol [lindex $splitRow 0]
-    set price [lindex $splitRow 3]
-    if {[string compare $price {#N/A}] == 0} {
-        puts "$symbol did not have a price. Skipping ..."
+    set cusip [lindex $splitRow 1]
+    set name [lindex $splitRow 2]
+    set price [lindex $splitRow 4]
+    if {([string compare $price {#N/A}] == 0) || ([string length $price] == 0)} {
+        puts "$name did not have a price. Skipping ..."
+    } elseif {[string length $cusip] == 0} {
+        puts "$name did not have a cusip. Skipping ..."
     } else {
         db eval {insert into prices (guid, commodity_guid, timestamp, value)
-                   select lower(hex(randomblob(16))), (select guid from commodities where mnemonic=$symbol), 
+                   select NEW_UUID, (select guid from commodities where cusip=$cusip),
                         datetime('now', 'localtime'), $price}
     }
 }
-
-
