@@ -20,14 +20,16 @@ use constants::{AccountRegister, FindCommand, FindParameters, Globals, RegisterC
 use gdk::enums::key;
 use gdk::EventType::ButtonPress;
 use gdk::{EventButton, EventKey, ModifierType};
+use glib::types::Type;
+use gtk::prelude::{GtkListStoreExtManual, GtkMenuExtManual};
 use gtk::SelectionMode::Browse;
 use gtk::TreeViewGridLines::Both;
 use gtk::{
     CellRendererExt, CellRendererText, CellRendererTextExt, CellRendererToggle,
-    CellRendererToggleExt, ContainerExt, GtkListStoreExt, GtkListStoreExtManual, GtkMenuExtManual,
-    GtkMenuItemExt, GtkWindowExt, Inhibit, ListStore, Menu, MenuItem, MenuShellExt, ScrolledWindow,
-    TreeModel, TreeModelExt, TreePath, TreeSelectionExt, TreeView, TreeViewColumn,
-    TreeViewColumnExt, TreeViewExt, Type, WidgetExt, Window, WindowType, NONE_ADJUSTMENT,
+    CellRendererToggleExt, ContainerExt, GtkListStoreExt, GtkMenuItemExt, GtkWindowExt, Inhibit,
+    ListStore, Menu, MenuItem, MenuShellExt, ScrolledWindow, TreeModel, TreeModelExt, TreePath,
+    TreeSelectionExt, TreeView, TreeViewColumn, TreeViewColumnExt, TreeViewExt, WidgetExt, Window,
+    WindowType, NONE_ADJUSTMENT,
 };
 use queries::{
     DELETE_TRANSACTION_SPLITS_SQL, DELETE_TRANSACTION_SQL, DUPLICATE_TRANSACTION_NO_DATE_SQL,
@@ -96,60 +98,44 @@ const STORE_PRICE: i32 = STORE_QUANTITY + 1;
 // NB These must be kept in sync with the actual column definitions
 const NON_MARKETABLE_STORE_COLUMN_NAMES: [&str; 5] =
     ["Date", "Num", "Description", "Reconcile State", "Value"];
-const NON_MARKETABLE_STORE_COLUMN_INDICES: [i32; 5] = [STORE_DATE,
-                                                       STORE_NUM,
-                                                       STORE_DESCRIPTION,
-                                                       STORE_R,
-                                                       STORE_VALUE];
-const NON_MARKETABLE_STORE_COLUMN_TYPES: [Type; 5] = [Type::String,
-                                                      Type::String,
-                                                      Type::String,
-                                                      Type::Bool,
-                                                      Type::String];
-const MARKETABLE_STORE_COLUMN_NAMES: [&str; 7] = ["Date",
-                                                  "Num",
-                                                  "Description",
-                                                  "Reconcile State",
-                                                  "Value",
-                                                  "Quantity",
-                                                  "Price"];
-const MARKETABLE_STORE_COLUMN_INDICES: [i32; 7] = [STORE_DATE,
-                                                   STORE_NUM,
-                                                   STORE_DESCRIPTION,
-                                                   STORE_R,
-                                                   STORE_VALUE,
-                                                   STORE_QUANTITY,
-                                                   STORE_PRICE];
-const MARKETABLE_STORE_COLUMN_TYPES: [Type; 7] = [Type::String,
-                                                  Type::String,
-                                                  Type::String,
-                                                  Type::Bool,
-                                                  Type::String,
-                                                  Type::String,
-                                                  Type::String];
+const NON_MARKETABLE_STORE_COLUMN_INDICES: [i32; 5] =
+    [STORE_DATE, STORE_NUM, STORE_DESCRIPTION, STORE_R, STORE_VALUE];
+const NON_MARKETABLE_STORE_COLUMN_TYPES: [Type; 5] =
+    [Type::String, Type::String, Type::String, Type::Bool, Type::String];
+const MARKETABLE_STORE_COLUMN_NAMES: [&str; 7] =
+    ["Date", "Num", "Description", "Reconcile State", "Value", "Quantity", "Price"];
+const MARKETABLE_STORE_COLUMN_INDICES: [i32; 7] =
+    [STORE_DATE, STORE_NUM, STORE_DESCRIPTION, STORE_R, STORE_VALUE, STORE_QUANTITY, STORE_PRICE];
+const MARKETABLE_STORE_COLUMN_TYPES: [Type; 7] = [
+    Type::String,
+    Type::String,
+    Type::String,
+    Type::Bool,
+    Type::String,
+    Type::String,
+    Type::String,
+];
 
 const ACCOUNT_WINDOW_HEIGHT: i32 = 400;
 const ACCOUNT_WINDOW_WIDTH: i32 = 1000;
 
 fn display_reconciled_balance(account_register: &AccountRegister, globals: &Globals) {
-    let reconciled_balance: f64 =
-        prepare_statement!(RECONCILED_BALANCE_SQL, globals).query_row(params![account_register.guid],
-                                                                   get_result!(f64))
-                                                        .unwrap();
-    let reconciled_balance_string = format!("Reconciled balance for\n{}\n\n${:.*}",
-                                            guid_to_path(prepare_statement!(GUID_TO_PATH_SQL,
-                                                                            globals),
-                                                         &account_register.guid),
-                                            2,
-                                            reconciled_balance);
+    let reconciled_balance: f64 = prepare_statement!(RECONCILED_BALANCE_SQL, globals)
+        .query_row(params![account_register.guid], get_result!(f64))
+        .unwrap();
+    let reconciled_balance_string = format!(
+        "Reconciled balance for\n{}\n\n${:.*}",
+        guid_to_path(prepare_statement!(GUID_TO_PATH_SQL, globals), &account_register.guid),
+        2,
+        reconciled_balance
+    );
     display_message_dialog(&reconciled_balance_string, globals);
 }
 
 fn delete_transaction(account_register: &AccountRegister, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&account_register.core, globals) {
-        let transaction_guid: String = model.get_value(&iter, STORE_TRANSACTION_GUID)
-                                            .get()
-                                            .unwrap();
+        let transaction_guid: String =
+            model.get_value(&iter, STORE_TRANSACTION_GUID).get().unwrap().unwrap();
         // Before deleting the transaction, check whether there are any open transaction registers
         // pointing at this transaction. If so, they must be closed
         {
@@ -162,10 +148,10 @@ fn delete_transaction(account_register: &AccountRegister, globals: &Globals) {
             }
             if n_transaction_registers > 0 {
                 display_message_dialog(
-                                       "You are attempting to delete a transaction for which \
+                    "You are attempting to delete a transaction for which \
                                         there are
 open transaction registers. Please close those registers and try again.",
-                                       globals,
+                    globals,
                 );
                 return;
             }
@@ -184,17 +170,19 @@ open transaction registers. Please close those registers and try again.",
             // If deleting last row, try to select previous. Otherwise, select next.
             if row_index == last_row_index {
                 if !model.iter_previous(&adjacent_iter) {
-                    panic!("delete_transaction: tried to delete last transaction with a \
-                            transaction count > 1, but model.iter_previous failed");
+                    panic!(
+                        "delete_transaction: tried to delete last transaction with a \
+                         transaction count > 1, but model.iter_previous failed"
+                    );
                 }
             } else if !model.iter_next(&adjacent_iter) {
-                panic!("delete_transaction: tried to delete transaction with a transaction count \
-                        > 1, but model.iter_next failed");
+                panic!(
+                    "delete_transaction: tried to delete transaction with a transaction count \
+                     > 1, but model.iter_next failed"
+                );
             }
-            adjacent_transaction_guid = Some(model.get_value(&adjacent_iter,
-                                                             STORE_TRANSACTION_GUID)
-                                                  .get()
-                                                  .unwrap());
+            adjacent_transaction_guid =
+                Some(model.get_value(&adjacent_iter, STORE_TRANSACTION_GUID).get().unwrap());
         }
 
         // Delete all splits pointing at this transaction
@@ -206,11 +194,12 @@ open transaction registers. Please close those registers and try again.",
 
         // Now delete the transaction itself
         {
-            prepare_statement!(DELETE_TRANSACTION_SQL, globals).execute(params![transaction_guid])
-                                                               .unwrap();
+            prepare_statement!(DELETE_TRANSACTION_SQL, globals)
+                .execute(params![transaction_guid])
+                .unwrap();
         }
         if let Some(guid) = adjacent_transaction_guid {
-            refresh_account_registers(None, Some(&guid), globals);
+            refresh_account_registers(None, Some(&guid.unwrap()), globals);
         } else {
             refresh_account_registers(None, None, globals);
         };
@@ -219,29 +208,25 @@ open transaction registers. Please close those registers and try again.",
 
 fn duplicate_transaction(account_register: &AccountRegister, today_p: bool, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&account_register.core, globals) {
-        let new_transaction_guid =
-            prepare_statement!(NEW_UUID_SQL, globals).query_row(params![], get_result!(string))
-                                                     .unwrap();
-        let source_transaction_guid: String = model.get_value(&iter, STORE_TRANSACTION_GUID)
-                                                   .get()
-                                                   .unwrap();
+        let new_transaction_guid = prepare_statement!(NEW_UUID_SQL, globals)
+            .query_row(params![], get_result!(string))
+            .unwrap();
+        let source_transaction_guid: String =
+            model.get_value(&iter, STORE_TRANSACTION_GUID).get().unwrap().unwrap();
         // Create the new transaction with new guid
         if today_p {
             prepare_statement!(DUPLICATE_TRANSACTION_NO_DATE_SQL, globals)
                 .execute(params![new_transaction_guid, source_transaction_guid])
                 .unwrap();
         } else {
-            let source_transaction_date: String = model.get_value(&iter, STORE_DATE).get().unwrap();
-            if let Some(new_date) = display_calendar(&source_transaction_date,
-                                                     &account_register.core.window,
-                                                     globals)
+            let source_transaction_date: String =
+                model.get_value(&iter, STORE_DATE).get().unwrap().unwrap();
+            if let Some(new_date) =
+                display_calendar(&source_transaction_date, &account_register.core.window, globals)
             {
-                prepare_statement!(DUPLICATE_TRANSACTION_WITH_DATE_SQL, globals).execute(params![
-                    new_transaction_guid,
-                    source_transaction_guid,
-                    &new_date
-                ])
-                                                                                .unwrap();
+                prepare_statement!(DUPLICATE_TRANSACTION_WITH_DATE_SQL, globals)
+                    .execute(params![new_transaction_guid, source_transaction_guid, &new_date])
+                    .unwrap();
             } else {
                 return;
             }
@@ -257,33 +242,36 @@ fn duplicate_transaction(account_register: &AccountRegister, today_p: bool, glob
 // Called when calendar requested for transaction
 fn display_calendar_for_transaction(account_register: &AccountRegister, globals: &Globals) {
     if let Some((model, iter)) = get_selection_info(&account_register.core, globals) {
-        let current_date: String = model.get_value(&iter, STORE_DATE).get().unwrap();
+        let current_date: String = model.get_value(&iter, STORE_DATE).get().unwrap().unwrap();
         if let Some(new_date) =
             display_calendar(&current_date, &account_register.core.window, globals)
         {
-            let transaction_guid: String = model.get_value(&iter, STORE_TRANSACTION_GUID)
-                                                .get()
-                                                .unwrap();
-            date_edited(&transaction_guid,
-                        prepare_statement!(INCREMENT_TRANSACTION_DATE_SQL, globals),
-                        prepare_statement!(TRANSACTION_DATE_TO_FIRST_OF_MONTH_SQL, globals),
-                        prepare_statement!(TRANSACTION_DATE_TO_END_OF_MONTH_SQL, globals),
-                        prepare_statement!(TRANSACTION_DATE_TODAY_SQL, globals),
-                        prepare_statement!(TRANSACTION_DATE_TO_USER_ENTRY_SQL, globals),
-                        &new_date,
-                        &globals);
+            let transaction_guid: String =
+                model.get_value(&iter, STORE_TRANSACTION_GUID).get().unwrap().unwrap();
+            date_edited(
+                &transaction_guid,
+                prepare_statement!(INCREMENT_TRANSACTION_DATE_SQL, globals),
+                prepare_statement!(TRANSACTION_DATE_TO_FIRST_OF_MONTH_SQL, globals),
+                prepare_statement!(TRANSACTION_DATE_TO_END_OF_MONTH_SQL, globals),
+                prepare_statement!(TRANSACTION_DATE_TODAY_SQL, globals),
+                prepare_statement!(TRANSACTION_DATE_TO_USER_ENTRY_SQL, globals),
+                &new_date,
+                &globals,
+            );
             refresh_account_registers(None, Some(&transaction_guid), &globals);
         }
     }
 }
 
 // Called when num field is edited
-fn num_field_edited(path: &TreePath, new_field: &str, account_register: &AccountRegister,
-                    globals: &Globals) {
-    let transaction_guid: String =
-        get_string_column_via_path(&account_register.core.view.get_model().unwrap(),
-                                   path,
-                                   STORE_TRANSACTION_GUID);
+fn num_field_edited(
+    path: &TreePath, new_field: &str, account_register: &AccountRegister, globals: &Globals,
+) {
+    let transaction_guid: String = get_string_column_via_path(
+        &account_register.core.view.get_model().unwrap(),
+        path,
+        STORE_TRANSACTION_GUID,
+    );
 
     // Update the database
     prepare_statement!("update transactions set num = ?1 where guid = ?2", globals)
@@ -297,17 +285,19 @@ fn num_field_edited(path: &TreePath, new_field: &str, account_register: &Account
 }
 
 // Called when description field is edited
-fn description_field_edited(path: &TreePath, new_field: &str,
-                            account_register: &AccountRegister, globals: &Globals) {
-    let transaction_guid: String =
-        get_string_column_via_path(&account_register.core.view.get_model().unwrap(),
-                                   path,
-                                   STORE_TRANSACTION_GUID);
+fn description_field_edited(
+    path: &TreePath, new_field: &str, account_register: &AccountRegister, globals: &Globals,
+) {
+    let transaction_guid: String = get_string_column_via_path(
+        &account_register.core.view.get_model().unwrap(),
+        path,
+        STORE_TRANSACTION_GUID,
+    );
 
     // Update the database
-    prepare_statement!("update transactions set description = ?1 where guid = ?2",
-                       globals).execute(params![new_field.to_string(), transaction_guid])
-                               .unwrap();
+    prepare_statement!("update transactions set description = ?1 where guid = ?2", globals)
+        .execute(params![new_field.to_string(), transaction_guid])
+        .unwrap();
 
     // Write new value to store
     update_string_column_via_path(&account_register.store, path, new_field, STORE_DESCRIPTION);
@@ -317,20 +307,18 @@ fn description_field_edited(path: &TreePath, new_field: &str,
 
 // Called when a new transaction is requested
 fn new_transaction(account_register: &AccountRegister, globals: &Globals) {
-    let transaction_guid = prepare_statement!(NEW_UUID_SQL, globals).query_row(params![],
-                                                                               get_result!(string))
-                                                                    .unwrap();
+    let transaction_guid = prepare_statement!(NEW_UUID_SQL, globals)
+        .query_row(params![], get_result!(string))
+        .unwrap();
     // We will insert the new transaction into the database, together with two associated splits, one for the account
     // displayed in the register, the other unspecified.
-    prepare_statement!(NEW_TRANSACTION_SQL, globals).execute(params![transaction_guid,
-                                                                     account_register.guid])
-                                                    .unwrap();
+    prepare_statement!(NEW_TRANSACTION_SQL, globals)
+        .execute(params![transaction_guid, account_register.guid])
+        .unwrap();
     // And the splits
     let stmt: &mut Statement = prepare_statement!(NEW_TRANSACTION_SPLIT_SQL, globals);
-    stmt.execute(params![transaction_guid, account_register.guid])
-        .unwrap();
-    stmt.execute(params![transaction_guid, globals.unspecified_account_guid])
-        .unwrap();
+    stmt.execute(params![transaction_guid, account_register.guid]).unwrap();
+    stmt.execute(params![transaction_guid, globals.unspecified_account_guid]).unwrap();
     refresh_account_registers(None, Some(&transaction_guid), globals);
 }
 
@@ -341,9 +329,9 @@ fn r_toggled(path: &TreePath, account_register: &AccountRegister, globals: &Glob
     let current_r: bool = get_boolean_column_via_path(&account_register.store, path, STORE_R);
 
     // Update the database
-    prepare_statement!(TOGGLE_TRANSACTION_R_FLAG_SQL, globals).execute(params![transaction_guid,
-                                                                            account_register.guid])
-                                                              .unwrap();
+    prepare_statement!(TOGGLE_TRANSACTION_R_FLAG_SQL, globals)
+        .execute(params![transaction_guid, account_register.guid])
+        .unwrap();
 
     // Update the model and view
     update_boolean_column_via_path(&account_register.store, path, !current_r, STORE_R);
@@ -364,10 +352,14 @@ fn r_toggled(path: &TreePath, account_register: &AccountRegister, globals: &Glob
 // all but the edited one. If all registers are desired, then the account_registers argument should be NULL. If an actual
 // account_register pointer is supplied, then that register will be skipped.
 // This routine also needs to be able to be told how to handle post-refresh selection. That is accomplished via the first argument.
-pub fn refresh_account_registers(maybe_skip: Option<&AccountRegister>,
-                                 maybe_transaction_guid: Option<&String>, globals: &Globals) {
-    fn refresh_account_register(account_register: &AccountRegister,
-                                maybe_transaction_guid: Option<&String>, globals: &Globals) {
+pub fn refresh_account_registers(
+    maybe_skip: Option<&AccountRegister>, maybe_transaction_guid: Option<&String>,
+    globals: &Globals,
+) {
+    fn refresh_account_register(
+        account_register: &AccountRegister, maybe_transaction_guid: Option<&String>,
+        globals: &Globals,
+    ) {
         // Record the current cursor information
         let (_, maybe_column) = account_register.core.view.get_cursor();
         // Detach the store/model from the view
@@ -377,20 +369,22 @@ pub fn refresh_account_registers(maybe_skip: Option<&AccountRegister>,
         account_register.store.clear();
         populate_account_register_store(account_register, globals);
         // Re-connect store to the view
-        account_register.core
-                        .view
-                        .set_model(Some(&account_register.store));
+        account_register.core.view.set_model(Some(&account_register.store));
         if let Some(transaction_guid) = maybe_transaction_guid {
             if let Some(focus_column) = maybe_column {
-                select_row_by_guid(&account_register.core.view,
-                                   &transaction_guid,
-                                   STORE_TRANSACTION_GUID,
-                                   &focus_column);
+                select_row_by_guid(
+                    &account_register.core.view,
+                    &transaction_guid,
+                    STORE_TRANSACTION_GUID,
+                    &focus_column,
+                );
             } else {
-                select_row_by_guid(&account_register.core.view,
-                                   &transaction_guid,
-                                   STORE_TRANSACTION_GUID,
-                                   &column_index_to_column(&account_register.core.view, VIEW_DATE));
+                select_row_by_guid(
+                    &account_register.core.view,
+                    &transaction_guid,
+                    STORE_TRANSACTION_GUID,
+                    &column_index_to_column(&account_register.core.view, VIEW_DATE),
+                );
             }
         }
     }
@@ -418,29 +412,37 @@ fn populate_account_register_store(account_register: &AccountRegister, globals: 
         // they were included by this query, it would result in incorrect values (we want to include only splits
         // with non-zero quantities in the value sum).
         let stmt = prepare_statement!(MARKETABLE_ACCOUNT_REGISTER_SQL, globals);
-        let marketable_iter =
-            stmt.query_map(params![account_register.guid],
-                           |row| -> Result<(String, String, String, i32, String, f64, f64, String),
-                                      rusqlite::Error> {
-                               Ok((row.get(QUERY_DATE).unwrap(),
-                                   row.get(QUERY_NUM).unwrap(),
-                                   row.get(QUERY_DESCRIPTION).unwrap(),
-                                   row.get(QUERY_FLAGS).unwrap(),
-                                   row.get(QUERY_TRANSACTION_GUID).unwrap(),
-                                   row.get(QUERY_VALUE).unwrap(),
-                                   row.get(SHARES_QUERY_QUANTITY).unwrap(),
-                                   row.get(SHARES_QUERY_SPLIT_GUID).unwrap()))
-                           })
-                .unwrap();
+        let marketable_iter = stmt
+            .query_map(
+                params![account_register.guid],
+                |row| -> Result<
+                    (String, String, String, i32, String, f64, f64, String),
+                    rusqlite::Error,
+                > {
+                    Ok((
+                        row.get(QUERY_DATE).unwrap(),
+                        row.get(QUERY_NUM).unwrap(),
+                        row.get(QUERY_DESCRIPTION).unwrap(),
+                        row.get(QUERY_FLAGS).unwrap(),
+                        row.get(QUERY_TRANSACTION_GUID).unwrap(),
+                        row.get(QUERY_VALUE).unwrap(),
+                        row.get(SHARES_QUERY_QUANTITY).unwrap(),
+                        row.get(SHARES_QUERY_SPLIT_GUID).unwrap(),
+                    ))
+                },
+            )
+            .unwrap();
         for wrapped_result in marketable_iter {
-            let (date,
-                 num,
-                 description,
-                 split_flags,
-                 transaction_guid,
-                 value,
-                 quantity,
-                 split_guid) = wrapped_result.unwrap();
+            let (
+                date,
+                num,
+                description,
+                split_flags,
+                transaction_guid,
+                value,
+                quantity,
+                split_guid,
+            ) = wrapped_result.unwrap();
             // Append an empty row to the list store. Iter will point to the new row
             let iter = store.append();
             // The idea with the handling of the quantity is to do the balance accumulation with integer arithmetic and then
@@ -455,41 +457,50 @@ fn populate_account_register_store(account_register: &AccountRegister, globals: 
             let quantity_balance_string = format!("{:.*}", 4, quantity_balance);
             let reconciled_p: bool = (split_flags & SPLIT_FLAG_RECONCILED) != 0;
             // add data
-            store.set(&iter,
-                      &[STORE_DATE as u32,
-                        STORE_NUM as u32,
-                        STORE_DESCRIPTION as u32,
-                        STORE_R as u32,
-                        STORE_TRANSACTION_GUID as u32,
-                        STORE_VALUE as u32,
-                        STORE_BALANCE as u32,
-                        STORE_QUANTITY as u32,
-                        STORE_PRICE as u32],
-                      &[&date,
-                        &num,
-                        &description,
-                        &reconciled_p,
-                        &transaction_guid,
-                        &value_string,
-                        &quantity_balance_string,
-                        &quantity_string,
-                        &price_string]);
+            store.set(
+                &iter,
+                &[
+                    STORE_DATE as u32,
+                    STORE_NUM as u32,
+                    STORE_DESCRIPTION as u32,
+                    STORE_R as u32,
+                    STORE_TRANSACTION_GUID as u32,
+                    STORE_VALUE as u32,
+                    STORE_BALANCE as u32,
+                    STORE_QUANTITY as u32,
+                    STORE_PRICE as u32,
+                ],
+                &[
+                    &date,
+                    &num,
+                    &description,
+                    &reconciled_p,
+                    &transaction_guid,
+                    &value_string,
+                    &quantity_balance_string,
+                    &quantity_string,
+                    &price_string,
+                ],
+            );
         }
     } else {
         let mut value_balance: f64 = 0.;
         let stmt = prepare_statement!(NON_MARKETABLE_ACCOUNT_REGISTER_SQL, globals);
-        let non_marketable_iter =
-            stmt.query_map(params![account_register.guid],
-                           |row| -> Result<(String, String, String, i32, String, f64),
-                                      rusqlite::Error> {
-                               Ok((row.get(QUERY_DATE).unwrap(),
-                                   row.get(QUERY_NUM).unwrap(),
-                                   row.get(QUERY_DESCRIPTION).unwrap(),
-                                   row.get(QUERY_FLAGS).unwrap(),
-                                   row.get(QUERY_TRANSACTION_GUID).unwrap(),
-                                   row.get(QUERY_VALUE).unwrap()))
-                           })
-                .unwrap();
+        let non_marketable_iter = stmt
+            .query_map(
+                params![account_register.guid],
+                |row| -> Result<(String, String, String, i32, String, f64), rusqlite::Error> {
+                    Ok((
+                        row.get(QUERY_DATE).unwrap(),
+                        row.get(QUERY_NUM).unwrap(),
+                        row.get(QUERY_DESCRIPTION).unwrap(),
+                        row.get(QUERY_FLAGS).unwrap(),
+                        row.get(QUERY_TRANSACTION_GUID).unwrap(),
+                        row.get(QUERY_VALUE).unwrap(),
+                    ))
+                },
+            )
+            .unwrap();
         for wrapped_result in non_marketable_iter {
             let (date, num, description, split_flags, transaction_guid, value) =
                 wrapped_result.unwrap();
@@ -501,113 +512,124 @@ fn populate_account_register_store(account_register: &AccountRegister, globals: 
             let reconciled_p: bool = (split_flags & SPLIT_FLAG_RECONCILED) != 0;
 
             // add data
-            store.set(&iter,
-                      &[STORE_DATE as u32,
-                        STORE_NUM as u32,
-                        STORE_DESCRIPTION as u32,
-                        STORE_R as u32,
-                        STORE_TRANSACTION_GUID as u32,
-                        STORE_VALUE as u32,
-                        STORE_BALANCE as u32],
-                      &[&date,
-                        &num,
-                        &description,
-                        &reconciled_p,
-                        &transaction_guid,
-                        &value_string,
-                        &value_balance_string]);
+            store.set(
+                &iter,
+                &[
+                    STORE_DATE as u32,
+                    STORE_NUM as u32,
+                    STORE_DESCRIPTION as u32,
+                    STORE_R as u32,
+                    STORE_TRANSACTION_GUID as u32,
+                    STORE_VALUE as u32,
+                    STORE_BALANCE as u32,
+                ],
+                &[
+                    &date,
+                    &num,
+                    &description,
+                    &reconciled_p,
+                    &transaction_guid,
+                    &value_string,
+                    &value_balance_string,
+                ],
+            );
         }
     }
 }
 
 fn create_account_store(shares_p: bool) -> ListStore {
     if shares_p {
-        ListStore::new(&[Type::String, // date
-                         Type::String, // num
-                         Type::String, // description
-                         Type::Bool,   // R
-                         Type::String, // transaction guid
-                         Type::String, // value
-                         Type::String, // balance
-                         Type::String, // quantity for marketable
-                         Type::String  /* price for marketable */])
+        ListStore::new(&[
+            Type::String, // date
+            Type::String, // num
+            Type::String, // description
+            Type::Bool,   // R
+            Type::String, // transaction guid
+            Type::String, // value
+            Type::String, // balance
+            Type::String, // quantity for marketable
+            Type::String, /* price for marketable */
+        ])
     } else {
-        ListStore::new(&[Type::String, // date
-                         Type::String, // num
-                         Type::String, // description
-                         Type::Bool,   // R
-                         Type::String, // transaction guid
-                         Type::String, // value
-                         Type::String  /* balance */])
+        ListStore::new(&[
+            Type::String, // date
+            Type::String, // num
+            Type::String, // description
+            Type::Bool,   // R
+            Type::String, // transaction guid
+            Type::String, // value
+            Type::String, /* balance */
+        ])
     }
 }
 
-pub fn create_account_register(account_guid: String, shares_p: bool, full_account_name: &str,
-                               globals: &Rc<Globals>) {
+pub fn create_account_register(
+    account_guid: String, shares_p: bool, full_account_name: &str, globals: &Rc<Globals>,
+) {
     fn display_transaction_register(account_register: Rc<AccountRegister>, globals: Rc<Globals>) {
         if let Some((model, iter)) = get_selection_info(&account_register.core, &globals) {
-            let transaction_guid: String = model.get_value(&iter, STORE_TRANSACTION_GUID)
-                                                .get()
-                                                .unwrap();
-            let description: String = model.get_value(&iter, STORE_DESCRIPTION).get().unwrap();
-            let date: String = model.get_value(&iter, STORE_DATE).get().unwrap();
-            create_transaction_register(transaction_guid,
-                                        description,
-                                        date.as_str(),
-                                        &account_register,
-                                        globals);
+            let transaction_guid: String =
+                model.get_value(&iter, STORE_TRANSACTION_GUID).get().unwrap().unwrap();
+            let description: String =
+                model.get_value(&iter, STORE_DESCRIPTION).get().unwrap().unwrap();
+            let date: String = model.get_value(&iter, STORE_DATE).get().unwrap().unwrap();
+            create_transaction_register(
+                transaction_guid,
+                description,
+                date.as_str(),
+                &account_register,
+                globals,
+            );
         }
     };
 
     // Check to see if there is already a register open for this account
-    if globals.account_registers
-              .borrow()
-              .contains_key(&account_guid)
-    {
-        display_message_dialog(&format!("An account register already exists for {}",
-                                        full_account_name),
-                               &globals);
+    if globals.account_registers.borrow().contains_key(&account_guid) {
+        display_message_dialog(
+            &format!("An account register already exists for {}", full_account_name),
+            &globals,
+        );
     } else {
         // Build the account register
-        let account_register =
-            Rc::new(AccountRegister { core: RegisterCore { view: TreeView::new(),
-                                                           window:
-                                                               Window::new(WindowType::Toplevel) },
-                                      find_parameters:
-                                          RefCell::new(FindParameters { column_index: None,
-                                                                        path: None,
-                                                                        regex: None,
-                                                                        column_type: None,
-                                                                        column_names: if shares_p {
-                                                                            &MARKETABLE_STORE_COLUMN_NAMES
-                                                                        } else {
-                                                                            &NON_MARKETABLE_STORE_COLUMN_NAMES
-                                                                        },
-                                                                        column_indices: if shares_p
-                                                                        {
-                                                                            &MARKETABLE_STORE_COLUMN_INDICES
-                                                                        } else {
-                                                                            &NON_MARKETABLE_STORE_COLUMN_INDICES
-                                                                        },
-                                                                        column_types: if shares_p {
-                                                                            &MARKETABLE_STORE_COLUMN_TYPES
-                                                                        } else {
-                                                                            &NON_MARKETABLE_STORE_COLUMN_TYPES
-                                                                        },
-                                                                        default_store_column:
-                                                                            STORE_DESCRIPTION,
-                                                                        default_view_column:
-                                                                            VIEW_DESCRIPTION as u32 }),
-                                      guid: account_guid.clone(),
-                                      scrolled_window: ScrolledWindow::new(NONE_ADJUSTMENT,
-                                                                           NONE_ADJUSTMENT),
-                                      shares_p,
-                                      store: create_account_store(shares_p) });
+        let account_register = Rc::new(AccountRegister {
+            core: RegisterCore {
+                view: TreeView::new(),
+                window: Window::new(WindowType::Toplevel),
+            },
+            find_parameters: RefCell::new(FindParameters {
+                column_index: None,
+                path: None,
+                regex: None,
+                column_type: None,
+                column_names: if shares_p {
+                    &MARKETABLE_STORE_COLUMN_NAMES
+                } else {
+                    &NON_MARKETABLE_STORE_COLUMN_NAMES
+                },
+                column_indices: if shares_p {
+                    &MARKETABLE_STORE_COLUMN_INDICES
+                } else {
+                    &NON_MARKETABLE_STORE_COLUMN_INDICES
+                },
+                column_types: if shares_p {
+                    &MARKETABLE_STORE_COLUMN_TYPES
+                } else {
+                    &NON_MARKETABLE_STORE_COLUMN_TYPES
+                },
+                default_store_column: STORE_DESCRIPTION,
+                default_view_column: VIEW_DESCRIPTION as u32,
+            }),
+            guid: account_guid.clone(),
+            scrolled_window: ScrolledWindow::new(NONE_ADJUSTMENT, NONE_ADJUSTMENT),
+            shares_p,
+            store: create_account_store(shares_p),
+        });
 
         // Record the the descriptor in the account_registers hashtable
-        globals.account_registers
-               .borrow_mut()
-               .insert(account_guid.clone(), account_register.clone());
+        globals
+            .account_registers
+            .borrow_mut()
+            .insert(account_guid.clone(), account_register.clone());
 
         // Populate the model/store
         populate_account_register_store(&account_register, globals);
@@ -628,25 +650,23 @@ pub fn create_account_register(account_guid: String, shares_p: bool, full_accoun
             let closure_globals = globals.clone();
             let closure_account_register = account_register.clone();
             renderer.connect_edited(move |_, path, new_date| {
-                        let transaction_guid =
-                            get_string_column_via_path(&closure_account_register.store,
-                                                       &path,
-                                                       STORE_TRANSACTION_GUID);
-                        date_edited(&transaction_guid,
-                                    prepare_statement!(INCREMENT_TRANSACTION_DATE_SQL,
-                                                       closure_globals),
-                                    prepare_statement!(TRANSACTION_DATE_TO_FIRST_OF_MONTH_SQL,
-                                                       closure_globals),
-                                    prepare_statement!(TRANSACTION_DATE_TO_END_OF_MONTH_SQL,
-                                                       closure_globals),
-                                    prepare_statement!(TRANSACTION_DATE_TODAY_SQL,
-                                                       closure_globals),
-                                    prepare_statement!(TRANSACTION_DATE_TO_USER_ENTRY_SQL,
-                                                       closure_globals),
-                                    new_date,
-                                    &closure_globals);
-                        refresh_account_registers(None, Some(&transaction_guid), &closure_globals);
-                    });
+                let transaction_guid = get_string_column_via_path(
+                    &closure_account_register.store,
+                    &path,
+                    STORE_TRANSACTION_GUID,
+                );
+                date_edited(
+                    &transaction_guid,
+                    prepare_statement!(INCREMENT_TRANSACTION_DATE_SQL, closure_globals),
+                    prepare_statement!(TRANSACTION_DATE_TO_FIRST_OF_MONTH_SQL, closure_globals),
+                    prepare_statement!(TRANSACTION_DATE_TO_END_OF_MONTH_SQL, closure_globals),
+                    prepare_statement!(TRANSACTION_DATE_TODAY_SQL, closure_globals),
+                    prepare_statement!(TRANSACTION_DATE_TO_USER_ENTRY_SQL, closure_globals),
+                    new_date,
+                    &closure_globals,
+                );
+                refresh_account_registers(None, Some(&transaction_guid), &closure_globals);
+            });
             renderer.set_property_editable(true);
             // Add column to the view
             let column: TreeViewColumn =
@@ -659,11 +679,8 @@ pub fn create_account_register(account_guid: String, shares_p: bool, full_accoun
             let closure_globals = globals.clone();
             let closure_account_register = account_register.clone();
             renderer.connect_edited(move |_, path, new_num| {
-                        num_field_edited(&path,
-                                         new_num,
-                                         &closure_account_register,
-                                         &closure_globals)
-                    });
+                num_field_edited(&path, new_num, &closure_account_register, &closure_globals)
+            });
             renderer.set_property_editable(true);
             // Add column to the view
             let column: TreeViewColumn = create_tree_view_text_column(&renderer, "Num", STORE_NUM);
@@ -676,11 +693,13 @@ pub fn create_account_register(account_guid: String, shares_p: bool, full_accoun
             let closure_globals = globals.clone();
             let closure_account_register = account_register.clone();
             renderer.connect_edited(move |_, path, new_description| {
-                        description_field_edited(&path,
-                                                 &new_description,
-                                                 &closure_account_register,
-                                                 &closure_globals)
-                    });
+                description_field_edited(
+                    &path,
+                    &new_description,
+                    &closure_account_register,
+                    &closure_globals,
+                )
+            });
             renderer.set_property_editable(true);
             // Add column to the view
             let column: TreeViewColumn =
@@ -695,9 +714,9 @@ pub fn create_account_register(account_guid: String, shares_p: bool, full_accoun
             let globals = globals.clone();
             let closure_account_register = account_register.clone();
             renderer.connect_toggled(move |_, path| {
-                        r_toggled(&path, &closure_account_register, &globals);
-                        Inhibit(false);
-                    });
+                r_toggled(&path, &closure_account_register, &globals);
+                Inhibit(false);
+            });
             renderer.set_activatable(true);
             // Add column to the view
             let column: TreeViewColumn = create_tree_view_toggle_column(&renderer, "R", STORE_R);
@@ -772,17 +791,20 @@ pub fn create_account_register(account_guid: String, shares_p: bool, full_accoun
         let delete_closure_globals = globals.clone();
         let delete_closure_account_guid = account_guid.clone();
         window.connect_delete_event(move |_, _| {
-                  if delete_closure_globals.account_registers
-                                           .borrow_mut()
-                                           .remove(&delete_closure_account_guid)
-                                           .is_some()
-                  {
-                      Inhibit(false)
-                  } else {
-                      panic!("Account register deleted, but not found in account_registers hash \
-                              table");
-                  }
-              });
+            if delete_closure_globals
+                .account_registers
+                .borrow_mut()
+                .remove(&delete_closure_account_guid)
+                .is_some()
+            {
+                Inhibit(false)
+            } else {
+                panic!(
+                    "Account register deleted, but not found in account_registers hash \
+                     table"
+                );
+            }
+        });
 
         // Set up to handle mouse button press events
         // Build the top-level popup menu
@@ -943,122 +965,140 @@ pub fn create_account_register(account_guid: String, shares_p: bool, full_accoun
         }
 
         view.connect_button_press_event(move |_view: &TreeView, event_button: &EventButton| {
-                // single click and right button pressed?
-                if (event_button.get_event_type() == ButtonPress)
-                   && (event_button.get_button() == 3)
-                {
-                    account_register_menu.show_all();
-                    account_register_menu.popup_easy(3, event_button.get_time());
-                    Inhibit(true) // we handled this
-                } else {
-                    Inhibit(false) // we did not handle this
-                }
-            });
+            // single click and right button pressed?
+            if (event_button.get_event_type() == ButtonPress) && (event_button.get_button() == 3) {
+                account_register_menu.show_all();
+                account_register_menu.popup_easy(3, event_button.get_time());
+                Inhibit(true) // we handled this
+            } else {
+                Inhibit(false) // we did not handle this
+            }
+        });
 
         // Handle deletion of the account register
         let globals_delete_event = globals.clone();
         let account_guid_delete_event = account_guid.clone();
         window.connect_delete_event(move |_, _| {
-                  globals_delete_event.account_registers
-                                      .borrow_mut()
-                                      .remove(&account_guid_delete_event);
-                  Inhibit(false)
-              });
+            globals_delete_event.account_registers.borrow_mut().remove(&account_guid_delete_event);
+            Inhibit(false)
+        });
 
         // Connect to signal for key press events
         let globals_key_press_event = globals.clone();
         let account_register_key_press_event = account_register.clone();
         view.connect_key_press_event(move |_accounts_view: &TreeView, event_key: &EventKey| {
-                let masked_state: u32 =
-                    event_key.get_state().bits() & globals_key_press_event.modifiers.bits();
-                // Ctrl key pressed?
-                if masked_state == ModifierType::CONTROL_MASK.bits() {
-                    match event_key.get_keyval() {
-                        key::n => {
-                            new_transaction(&account_register_key_press_event,
-                                            &globals_key_press_event);
-                            Inhibit(true)
-                        }
-                        key::d => {
-                            duplicate_transaction(&account_register_key_press_event,
-                                                  false,
-                                                  &globals_key_press_event);
-                            Inhibit(true)
-                        }
-                        key::a => {
-                            display_calendar_for_transaction(&account_register_key_press_event,
-                                                             &globals_key_press_event);
-                            Inhibit(true)
-                        }
-                        key::f => {
-                            find(&FindCommand::FindBackward,
-                                 &account_register_key_press_event.find_parameters,
-                                 &account_register_key_press_event.core,
-                                 &globals_key_press_event);
-                            Inhibit(true)
-                        }
-                        key::g => {
-                            find(&FindCommand::FindNextBackward,
-                                 &account_register_key_press_event.find_parameters,
-                                 &account_register_key_press_event.core,
-                                 &globals_key_press_event);
-                            Inhibit(true)
-                        }
-                        key::t => {
-                            display_transaction_register(account_register_key_press_event.clone(),
-                                                         globals_key_press_event.clone());
-                            Inhibit(true)
-                        }
-                        key::r => {
-                            display_reconciled_balance(&account_register_key_press_event,
-                                                       &globals_key_press_event);
-                            Inhibit(true)
-                        }
-                        // Indicate we didn't handle the event
-                        _ => Inhibit(false),
+            let masked_state: u32 =
+                event_key.get_state().bits() & globals_key_press_event.modifiers.bits();
+            // Ctrl key pressed?
+            if masked_state == ModifierType::CONTROL_MASK.bits() {
+                match event_key.get_keyval() {
+                    key::n => {
+                        new_transaction(
+                            &account_register_key_press_event,
+                            &globals_key_press_event,
+                        );
+                        Inhibit(true)
                     }
-                } else if masked_state
-                          == (ModifierType::CONTROL_MASK.bits() | ModifierType::SHIFT_MASK.bits())
-                {
-                    match event_key.get_keyval() {
-                        key::D => {
-                            delete_transaction(&account_register_key_press_event,
-                                               &globals_key_press_event);
-                            Inhibit(true)
-                        }
-                        key::F => {
-                            find(&FindCommand::FindForward,
-                                 &account_register_key_press_event.find_parameters,
-                                 &account_register_key_press_event.core,
-                                 &globals_key_press_event);
-                            Inhibit(true)
-                        }
-                        key::G => {
-                            find(&FindCommand::FindNextForward,
-                                 &account_register_key_press_event.find_parameters,
-                                 &account_register_key_press_event.core,
-                                 &globals_key_press_event);
-                            Inhibit(true)
-                        }
-                        // Indicate we didn't handle the event
-                        _ => Inhibit(false),
+                    key::d => {
+                        duplicate_transaction(
+                            &account_register_key_press_event,
+                            false,
+                            &globals_key_press_event,
+                        );
+                        Inhibit(true)
                     }
-                } else if masked_state == ModifierType::MOD1_MASK.bits() {
-                    match event_key.get_keyval() {
-                        key::d => {
-                            duplicate_transaction(&account_register_key_press_event,
-                                                  true,
-                                                  &globals_key_press_event);
-                            Inhibit(true)
-                        }
-                        // Indicate we didn't handle the event
-                        _ => Inhibit(false),
+                    key::a => {
+                        display_calendar_for_transaction(
+                            &account_register_key_press_event,
+                            &globals_key_press_event,
+                        );
+                        Inhibit(true)
                     }
-                } else {
-                    // We didn't handle the event
-                    Inhibit(false)
+                    key::f => {
+                        find(
+                            &FindCommand::FindBackward,
+                            &account_register_key_press_event.find_parameters,
+                            &account_register_key_press_event.core,
+                            &globals_key_press_event,
+                        );
+                        Inhibit(true)
+                    }
+                    key::g => {
+                        find(
+                            &FindCommand::FindNextBackward,
+                            &account_register_key_press_event.find_parameters,
+                            &account_register_key_press_event.core,
+                            &globals_key_press_event,
+                        );
+                        Inhibit(true)
+                    }
+                    key::t => {
+                        display_transaction_register(
+                            account_register_key_press_event.clone(),
+                            globals_key_press_event.clone(),
+                        );
+                        Inhibit(true)
+                    }
+                    key::r => {
+                        display_reconciled_balance(
+                            &account_register_key_press_event,
+                            &globals_key_press_event,
+                        );
+                        Inhibit(true)
+                    }
+                    // Indicate we didn't handle the event
+                    _ => Inhibit(false),
                 }
-            });
+            } else if masked_state
+                == (ModifierType::CONTROL_MASK.bits() | ModifierType::SHIFT_MASK.bits())
+            {
+                match event_key.get_keyval() {
+                    key::D => {
+                        delete_transaction(
+                            &account_register_key_press_event,
+                            &globals_key_press_event,
+                        );
+                        Inhibit(true)
+                    }
+                    key::F => {
+                        find(
+                            &FindCommand::FindForward,
+                            &account_register_key_press_event.find_parameters,
+                            &account_register_key_press_event.core,
+                            &globals_key_press_event,
+                        );
+                        Inhibit(true)
+                    }
+                    key::G => {
+                        find(
+                            &FindCommand::FindNextForward,
+                            &account_register_key_press_event.find_parameters,
+                            &account_register_key_press_event.core,
+                            &globals_key_press_event,
+                        );
+                        Inhibit(true)
+                    }
+                    // Indicate we didn't handle the event
+                    _ => Inhibit(false),
+                }
+            } else if masked_state == ModifierType::MOD1_MASK.bits() {
+                match event_key.get_keyval() {
+                    key::d => {
+                        duplicate_transaction(
+                            &account_register_key_press_event,
+                            true,
+                            &globals_key_press_event,
+                        );
+                        Inhibit(true)
+                    }
+                    // Indicate we didn't handle the event
+                    _ => Inhibit(false),
+                }
+            } else {
+                // We didn't handle the event
+                Inhibit(false)
+            }
+        });
 
         // Grid lines for readability
         view.set_grid_lines(Both);

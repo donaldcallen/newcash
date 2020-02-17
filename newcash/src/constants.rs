@@ -18,9 +18,8 @@
 extern crate gdk;
 
 use gdk::ModifierType;
-use gtk::{
-    ComboBoxText, Entry, ListStore, ScrolledWindow, TreePath, TreeStore, TreeView, Type, Window,
-};
+use glib::types::Type;
+use gtk::{ComboBoxText, Entry, ListStore, ScrolledWindow, TreePath, TreeStore, TreeView, Window};
 use regex::Regex;
 use rusqlite::Connection;
 use std::cell::RefCell;

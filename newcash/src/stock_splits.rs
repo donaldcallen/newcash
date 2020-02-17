@@ -20,14 +20,15 @@ use constants::{Globals, RegisterCore, StockSplitsRegister, DATE_SIZE};
 use gdk::enums::key;
 use gdk::EventType::ButtonPress;
 use gdk::{EventButton, EventKey, ModifierType};
+use glib::types::Type;
+use gtk::prelude::{GtkListStoreExtManual, GtkMenuExtManual};
 use gtk::SelectionMode::Browse;
 use gtk::TreeViewGridLines::Both;
 use gtk::{
     CellRendererExt, CellRendererText, CellRendererTextExt, ContainerExt, GtkListStoreExt,
-    GtkListStoreExtManual, GtkMenuExtManual, GtkMenuItemExt, GtkWindowExt, Inhibit, ListStore,
-    Menu, MenuItem, MenuShellExt, ScrolledWindow, TreeModelExt, TreePath, TreeSelectionExt,
-    TreeView, TreeViewColumn, TreeViewColumnExt, TreeViewExt, Type, WidgetExt, Window, WindowType,
-    NONE_ADJUSTMENT,
+    GtkMenuItemExt, GtkWindowExt, Inhibit, ListStore, Menu, MenuItem, MenuShellExt, ScrolledWindow,
+    TreeModelExt, TreePath, TreeSelectionExt, TreeView, TreeViewColumn, TreeViewColumnExt,
+    TreeViewExt, WidgetExt, Window, WindowType, NONE_ADJUSTMENT,
 };
 use queries::{
     DELETE_STOCK_SPLIT_SQL, GET_SPLIT_FACTOR_SQL, NEW_STOCK_SPLIT_SQL, STOCK_SPLITS_REGISTER_SQL,
@@ -57,9 +58,9 @@ const STOCK_SPLITS_WINDOW_HEIGHT: i32 = 80;
 const STOCK_SPLITS_WINDOW_WIDTH: i32 = 400;
 
 pub fn get_split_factor(split_guid: &str, globals: &Globals) -> f64 {
-    prepare_statement!(GET_SPLIT_FACTOR_SQL, globals).query_row(params![split_guid],
-                                                                get_result!(f64))
-                                                     .unwrap()
+    prepare_statement!(GET_SPLIT_FACTOR_SQL, globals)
+        .query_row(params![split_guid], get_result!(f64))
+        .unwrap()
 }
 
 fn refresh_stock_splits_register(stock_splits_register: &StockSplitsRegister, globals: &Globals) {
@@ -84,17 +85,19 @@ fn refresh_stock_splits_register(stock_splits_register: &StockSplitsRegister, gl
     }
 }
 
-fn factor_edited(path: &TreePath, new_factor: &str, stock_splits_register: &StockSplitsRegister,
-                 globals: &Globals) {
+fn factor_edited(
+    path: &TreePath, new_factor: &str, stock_splits_register: &StockSplitsRegister,
+    globals: &Globals,
+) {
     let store = &stock_splits_register.store;
     let stock_split_guid: String = get_string_column_via_path(store, path, STORE_GUID);
     if let Ok(factor) = new_factor.parse::<f64>() {
         // Write new value to store
         update_string_column_via_path(store, path, new_factor, STORE_FACTOR);
 
-        prepare_statement!(UPDATE_SPLIT_FACTOR_SQL, globals).execute(params![factor,
-                                                                             stock_split_guid])
-                                                            .unwrap();
+        prepare_statement!(UPDATE_SPLIT_FACTOR_SQL, globals)
+            .execute(params![factor, stock_split_guid])
+            .unwrap();
         refresh_stock_splits_register(&stock_splits_register, globals);
     } else {
         display_message_dialog("Invalid split factor", globals);
@@ -113,10 +116,9 @@ fn delete_stock_split(stock_splits_register: &StockSplitsRegister, globals: &Glo
     if view.get_selection().count_selected_rows() == 1 {
         // We need the guid of the selected quote
         if let Some((model, iter)) = view.get_selection().get_selected() {
-            let guid: String = model.get_value(&iter, STORE_GUID).get().unwrap();
+            let guid: String = model.get_value(&iter, STORE_GUID).get().unwrap().unwrap();
             // Delete the quote
-            prepare_statement!(DELETE_STOCK_SPLIT_SQL, globals).execute(params![guid])
-                                                               .unwrap();
+            prepare_statement!(DELETE_STOCK_SPLIT_SQL, globals).execute(params![guid]).unwrap();
             refresh_stock_splits_register(stock_splits_register, globals);
         }
     } else {
@@ -124,27 +126,28 @@ fn delete_stock_split(stock_splits_register: &StockSplitsRegister, globals: &Glo
     }
 }
 
-fn display_calendar_for_stock_split(stock_splits_register: &StockSplitsRegister,
-                                    globals: &Globals) {
+fn display_calendar_for_stock_split(
+    stock_splits_register: &StockSplitsRegister, globals: &Globals,
+) {
     if let Some((model, iter)) = get_selection_info(&stock_splits_register.core, globals) {
-        let current_timestamp: String = model.get_value(&iter, STORE_DATE).get().unwrap();
+        let current_timestamp: String = model.get_value(&iter, STORE_DATE).get().unwrap().unwrap();
         let current_date: String = (&(current_timestamp.as_str())[0..DATE_SIZE]).to_string();
 
         if let Some(new_date) =
             display_calendar(&current_date, &stock_splits_register.core.window, globals)
         {
-            let guid: String = stock_splits_register.store
-                                                    .get_value(&iter, STORE_GUID)
-                                                    .get()
-                                                    .unwrap();
-            date_edited(guid.as_str(),
-                        prepare_statement!(STOCK_SPLIT_INCREMENT_DATE_SQL, globals),
-                        prepare_statement!(STOCK_SPLIT_DATE_TO_FIRST_OF_MONTH_SQL, globals),
-                        prepare_statement!(STOCK_SPLIT_DATE_TO_END_OF_MONTH_SQL, globals),
-                        prepare_statement!(STOCK_SPLIT_DATE_TODAY_SQL, globals),
-                        prepare_statement!(STOCK_SPLIT_DATE_TO_USER_ENTRY_SQL, globals),
-                        &new_date,
-                        &globals)
+            let guid: String =
+                stock_splits_register.store.get_value(&iter, STORE_GUID).get().unwrap().unwrap();
+            date_edited(
+                guid.as_str(),
+                prepare_statement!(STOCK_SPLIT_INCREMENT_DATE_SQL, globals),
+                prepare_statement!(STOCK_SPLIT_DATE_TO_FIRST_OF_MONTH_SQL, globals),
+                prepare_statement!(STOCK_SPLIT_DATE_TO_END_OF_MONTH_SQL, globals),
+                prepare_statement!(STOCK_SPLIT_DATE_TODAY_SQL, globals),
+                prepare_statement!(STOCK_SPLIT_DATE_TO_USER_ENTRY_SQL, globals),
+                &new_date,
+                &globals,
+            )
         }
         refresh_stock_splits_register(stock_splits_register, globals);
     }
@@ -160,9 +163,12 @@ fn populate_stock_splits_store(stock_splits_register: &StockSplitsRegister, glob
     let mut total_factor: f64 = 1.0;
     // Get stock split data
     let stmt = prepare_statement!(STOCK_SPLITS_REGISTER_SQL, globals);
-    let stock_splits_iter = stmt.query_map(params![&(*stock_splits_register.commodity_guid)],
-                                           get_result!(string_string_f64))
-                                .unwrap();
+    let stock_splits_iter = stmt
+        .query_map(
+            params![&(*stock_splits_register.commodity_guid)],
+            get_result!(string_string_f64),
+        )
+        .unwrap();
     for wrapped_result in stock_splits_iter {
         let (guid, date, factor) = wrapped_result.unwrap();
         total_factor *= factor;
@@ -173,30 +179,33 @@ fn populate_stock_splits_store(stock_splits_register: &StockSplitsRegister, glob
         let factor_string = format!("{:.*}", 6, factor);
         let total_factor_string = format!("{:.*}", 6, total_factor);
         // add data to the store
-        store.set(&iter,
-                  &[STORE_GUID as u32,
-                    STORE_DATE as u32,
-                    STORE_FACTOR as u32,
-                    STORE_TOTAL_FACTOR as u32],
-                  &[&guid, &date, &factor_string, &total_factor_string]);
+        store.set(
+            &iter,
+            &[STORE_GUID as u32, STORE_DATE as u32, STORE_FACTOR as u32, STORE_TOTAL_FACTOR as u32],
+            &[&guid, &date, &factor_string, &total_factor_string],
+        );
     }
 }
 
-pub fn create_stock_splits_register(commodity_guid: &Rc<String>, fullname: String,
-                                    globals: &Rc<Globals>) {
+pub fn create_stock_splits_register(
+    commodity_guid: &Rc<String>, fullname: String, globals: &Rc<Globals>,
+) {
     // Create the descriptor
-    let stock_splits_register =
-        Rc::new(StockSplitsRegister { commodity_guid: commodity_guid.clone(),
-                                      core: RegisterCore { view: TreeView::new(),
-                                                           window:
-                                                               Window::new(WindowType::Toplevel) },
-                                      fullname,
-                                      scrolled_window: ScrolledWindow::new(NONE_ADJUSTMENT,
-                                                                           NONE_ADJUSTMENT),
-                                      store: ListStore::new(&[Type::String, // Commodity guid
-                                                              Type::String, // Split date
-                                                              Type::String, // Split factor
-                                                              Type::String  /* Total split factor */]) });
+    let stock_splits_register = Rc::new(StockSplitsRegister {
+        commodity_guid: commodity_guid.clone(),
+        core: RegisterCore {
+            view: TreeView::new(),
+            window: Window::new(WindowType::Toplevel),
+        },
+        fullname,
+        scrolled_window: ScrolledWindow::new(NONE_ADJUSTMENT, NONE_ADJUSTMENT),
+        store: ListStore::new(&[
+            Type::String, // Commodity guid
+            Type::String, // Split date
+            Type::String, // Split factor
+            Type::String, /* Total split factor */
+        ]),
+    });
 
     // Unwrap optional entries used repeatedly below
     let view = &stock_splits_register.core.view;
@@ -216,27 +225,23 @@ pub fn create_stock_splits_register(commodity_guid: &Rc<String>, fullname: Strin
         let closure_globals = globals.clone();
         let closure_stock_splits_register = stock_splits_register.clone();
         renderer.connect_edited(move |_, path, new_date| {
-                    let quote_guid =
-                        get_string_column_via_path(&closure_stock_splits_register.core
-                                                                                 .view
-                                                                                 .get_model()
-                                                                                 .unwrap(),
-                                                   &path,
-                                                   STORE_GUID);
-                    date_edited(&quote_guid,
-                                prepare_statement!(STOCK_SPLIT_INCREMENT_DATE_SQL,
-                                                   closure_globals),
-                                prepare_statement!(STOCK_SPLIT_DATE_TO_FIRST_OF_MONTH_SQL,
-                                                   closure_globals),
-                                prepare_statement!(STOCK_SPLIT_DATE_TO_END_OF_MONTH_SQL,
-                                                   closure_globals),
-                                prepare_statement!(STOCK_SPLIT_DATE_TODAY_SQL, closure_globals),
-                                prepare_statement!(STOCK_SPLIT_DATE_TO_USER_ENTRY_SQL,
-                                                   closure_globals),
-                                &new_date,
-                                &closure_globals);
-                    refresh_stock_splits_register(&closure_stock_splits_register, &closure_globals);
-                });
+            let quote_guid = get_string_column_via_path(
+                &closure_stock_splits_register.core.view.get_model().unwrap(),
+                &path,
+                STORE_GUID,
+            );
+            date_edited(
+                &quote_guid,
+                prepare_statement!(STOCK_SPLIT_INCREMENT_DATE_SQL, closure_globals),
+                prepare_statement!(STOCK_SPLIT_DATE_TO_FIRST_OF_MONTH_SQL, closure_globals),
+                prepare_statement!(STOCK_SPLIT_DATE_TO_END_OF_MONTH_SQL, closure_globals),
+                prepare_statement!(STOCK_SPLIT_DATE_TODAY_SQL, closure_globals),
+                prepare_statement!(STOCK_SPLIT_DATE_TO_USER_ENTRY_SQL, closure_globals),
+                &new_date,
+                &closure_globals,
+            );
+            refresh_stock_splits_register(&closure_stock_splits_register, &closure_globals);
+        });
         renderer.set_property_editable(true);
         // Add date column to the view
         let column: TreeViewColumn =
@@ -249,8 +254,8 @@ pub fn create_stock_splits_register(commodity_guid: &Rc<String>, fullname: Strin
         let globals = globals.clone();
         let closure_stock_splits_register = stock_splits_register.clone();
         renderer.connect_edited(move |_, path, new_factor| {
-                    factor_edited(&path, &new_factor, &closure_stock_splits_register, &globals)
-                });
+            factor_edited(&path, &new_factor, &closure_stock_splits_register, &globals)
+        });
         renderer.set_property_editable(true);
 
         let column: TreeViewColumn =
@@ -295,8 +300,8 @@ pub fn create_stock_splits_register(commodity_guid: &Rc<String>, fullname: Strin
         let closure_globals = globals.clone();
         let closure_stock_splits_register = stock_splits_register.clone();
         stock_splits_menu_item.connect_activate(move |_stock_splits_menu_item: &MenuItem| {
-                                  new_stock_split(&closure_stock_splits_register, &closure_globals);
-                              });
+            new_stock_split(&closure_stock_splits_register, &closure_globals);
+        });
         stock_splits_menu.append(&stock_splits_menu_item);
     }
     {
@@ -305,9 +310,8 @@ pub fn create_stock_splits_register(commodity_guid: &Rc<String>, fullname: Strin
         let closure_globals = globals.clone();
         let closure_stock_splits_register = stock_splits_register.clone();
         stock_splits_menu_item.connect_activate(move |_stock_splits_menu_item: &MenuItem| {
-                                  delete_stock_split(&closure_stock_splits_register,
-                                                     &closure_globals);
-                              });
+            delete_stock_split(&closure_stock_splits_register, &closure_globals);
+        });
         stock_splits_menu.append(&stock_splits_menu_item);
     }
     {
@@ -316,67 +320,74 @@ pub fn create_stock_splits_register(commodity_guid: &Rc<String>, fullname: Strin
         let closure_globals = globals.clone();
         let closure_stock_splits_register = stock_splits_register.clone();
         stock_splits_menu_item.connect_activate(move |_stock_splits_menu_item: &MenuItem| {
-                                  display_calendar_for_stock_split(&closure_stock_splits_register,
-                                                                   &closure_globals);
-                              });
+            display_calendar_for_stock_split(&closure_stock_splits_register, &closure_globals);
+        });
         stock_splits_menu.append(&stock_splits_menu_item);
     }
 
     view.connect_button_press_event(move |_view: &TreeView, event_button: &EventButton| {
-            // single click and right button pressed?
-            if (event_button.get_event_type() == ButtonPress) && (event_button.get_button() == 3) {
-                stock_splits_menu.show_all();
-                stock_splits_menu.popup_easy(3, event_button.get_time());
-                Inhibit(true) // we handled this
-            } else {
-                Inhibit(false) // we did not handle this
-            }
-        });
+        // single click and right button pressed?
+        if (event_button.get_event_type() == ButtonPress) && (event_button.get_button() == 3) {
+            stock_splits_menu.show_all();
+            stock_splits_menu.popup_easy(3, event_button.get_time());
+            Inhibit(true) // we handled this
+        } else {
+            Inhibit(false) // we did not handle this
+        }
+    });
 
     // Connect to signal for key press events
     let globals_key_press_event = globals.clone();
     let stock_splits_register_key_press_event = stock_splits_register.clone();
     view.connect_key_press_event(move |_stock_splits_view: &TreeView, event_key: &EventKey| {
-            let masked_state: u32 =
-                event_key.get_state().bits() & globals_key_press_event.modifiers.bits();
-            // Ctrl key pressed?
-            if masked_state == ModifierType::CONTROL_MASK.bits() {
-                match event_key.get_keyval() {
-                    key::n => {
-                        new_stock_split(&stock_splits_register_key_press_event,
-                                        &globals_key_press_event);
-                        Inhibit(true)
-                    }
-                    key::d => {
-                        delete_stock_split(&stock_splits_register_key_press_event,
-                                           &globals_key_press_event);
-                        Inhibit(true)
-                    }
-                    key::a => {
-                        display_calendar_for_stock_split(&stock_splits_register_key_press_event,
-                                                         &globals_key_press_event);
-                        Inhibit(true)
-                    }
-                    // Indicate we didn't handle the event
-                    _ => Inhibit(false),
+        let masked_state: u32 =
+            event_key.get_state().bits() & globals_key_press_event.modifiers.bits();
+        // Ctrl key pressed?
+        if masked_state == ModifierType::CONTROL_MASK.bits() {
+            match event_key.get_keyval() {
+                key::n => {
+                    new_stock_split(
+                        &stock_splits_register_key_press_event,
+                        &globals_key_press_event,
+                    );
+                    Inhibit(true)
                 }
-            } else if masked_state
-                      == (ModifierType::CONTROL_MASK.bits() | ModifierType::SHIFT_MASK.bits())
-            {
-                match event_key.get_keyval() {
-                    key::D => {
-                        delete_stock_split(&stock_splits_register_key_press_event,
-                                           &globals_key_press_event);
-                        Inhibit(true)
-                    }
-                    // Indicate we didn't handle the event
-                    _ => Inhibit(false),
+                key::d => {
+                    delete_stock_split(
+                        &stock_splits_register_key_press_event,
+                        &globals_key_press_event,
+                    );
+                    Inhibit(true)
                 }
-            } else {
-                // We didn't handle the event
-                Inhibit(false)
+                key::a => {
+                    display_calendar_for_stock_split(
+                        &stock_splits_register_key_press_event,
+                        &globals_key_press_event,
+                    );
+                    Inhibit(true)
+                }
+                // Indicate we didn't handle the event
+                _ => Inhibit(false),
             }
-        });
+        } else if masked_state
+            == (ModifierType::CONTROL_MASK.bits() | ModifierType::SHIFT_MASK.bits())
+        {
+            match event_key.get_keyval() {
+                key::D => {
+                    delete_stock_split(
+                        &stock_splits_register_key_press_event,
+                        &globals_key_press_event,
+                    );
+                    Inhibit(true)
+                }
+                // Indicate we didn't handle the event
+                _ => Inhibit(false),
+            }
+        } else {
+            // We didn't handle the event
+            Inhibit(false)
+        }
+    });
 
     // Set the view's selection mode
     view.get_selection().set_mode(Browse);

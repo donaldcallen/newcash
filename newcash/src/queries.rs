@@ -21,12 +21,12 @@ pub const ACCOUNT_CHILD_ALL_SQL: &str = "
     where parent_guid = ?1
     order by name";
 pub const ACCOUNT_CHILD_NOT_HIDDEN_SQL: &str = concat!(
-                                                       "
+    "
     select name, guid, flags
     from accounts
     where parent_guid = ?1 and not (flags&",
-                                                       constants!(ACCOUNT_FLAG_HIDDEN),
-                                                       ")
+    constants!(ACCOUNT_FLAG_HIDDEN),
+    ")
     order by name"
 );
 pub const ACCOUNT_INFORMATION_SQL: &str = "
@@ -63,12 +63,12 @@ pub const DELETE_ACCOUNT_SPLIT_CHECK_STR: &str = "
     (select count(*) as nchildren from accounts where parent_guid = ?1) c";
 pub const DELETE_ACCOUNT_SQL: &str = "delete from accounts where guid = ?1";
 pub const PASTE_ACCOUNT_SQL: &str = concat!(
-                                            "
+    "
     insert into accounts (guid, name, parent_guid, commodity_guid, code, description, flags)
     select ",
-                                            constants!(NEW_UUID),
-                                            ", name, ?2, commodity_guid, code, description, \
-                                             flags from accounts where guid = ?1"
+    constants!(NEW_UUID),
+    ", name, ?2, commodity_guid, code, description, \
+     flags from accounts where guid = ?1"
 );
 pub const MARKETABLE_ACCOUNT_REGISTER_SQL: &str = "
     select date(t.post_date)
@@ -143,19 +143,20 @@ pub const TRANSACTION_DATE_TODAY_SQL: &str = "
     update transactions set post_date = datetime('now', 'localtime') where guid = ?1";
 pub const UPDATE_SPLIT_FACTOR_SQL: &str =
     "update stock_splits set split_factor = ?1 where guid = ?2";
-pub const NEW_STOCK_SPLIT_SQL: &str =
-    concat!("insert into stock_splits (guid, commodity_guid, split_date, split_factor)
+pub const NEW_STOCK_SPLIT_SQL: &str = concat!(
+    "insert into stock_splits (guid, commodity_guid, split_date, split_factor)
                             values (",
-            constants!(NEW_UUID),
-            ", ?1, date('now', 'localtime'), 1.0)");
+    constants!(NEW_UUID),
+    ", ?1, date('now', 'localtime'), 1.0)"
+);
 pub const DELETE_STOCK_SPLIT_SQL: &str = "delete from stock_splits where guid = ?1";
 pub const TOGGLE_TRANSACTION_R_FLAG_SQL: &str = concat!(
-                                                        "
+    "
     update splits set flags = ((flags & ~",
-                                                        constants!(SPLIT_FLAG_RECONCILED),
-                                                        ")|(~flags & ",
-                                                        constants!(SPLIT_FLAG_RECONCILED),
-                                                        "))
+    constants!(SPLIT_FLAG_RECONCILED),
+    ")|(~flags & ",
+    constants!(SPLIT_FLAG_RECONCILED),
+    "))
     where tx_guid = ?1 and account_guid = ?2"
 );
 pub const REPARENT_ACCOUNT_SQL: &str = "update accounts set parent_guid = ?1 where guid = ?2";
@@ -167,11 +168,11 @@ pub const NEW_TRANSACTION_SQL: &str = "
             where s.account_guid = ?2 and t.guid = s.tx_guid), 
         datetime('now', 'localtime'), ''";
 pub const NEW_TRANSACTION_SPLIT_SQL: &str = concat!(
-                                                    "
+    "
     insert into splits (guid, tx_guid, account_guid, memo, flags, value, quantity)
                        select ",
-                                                    constants!(NEW_UUID),
-                                                    ", ?1, ?2, '', 0, 0, 0"
+    constants!(NEW_UUID),
+    ", ?1, ?2, '', 0, 0, 0"
 );
 pub const DUPLICATE_TRANSACTION_NO_DATE_SQL: &str = "
     insert into transactions (guid, num, post_date, enter_date, description) 
@@ -188,11 +189,11 @@ pub const DUPLICATE_TRANSACTION_WITH_DATE_SQL: &str = "
                             , datetime('now', 'localtime') 
                             , (select description from transactions where guid = ?2)";
 pub const DUPLICATE_TRANSACTION_SPLITS_SQL: &str = concat!(
-                                                           "
+    "
     insert into splits (guid, tx_guid, account_guid, memo, flags, value, quantity)
                         select ",
-                                                           constants!(NEW_UUID),
-                                                           ", ?1, account_guid, memo, 0, value, \
+    constants!(NEW_UUID),
+    ", ?1, account_guid, memo, 0, value, \
                                                             quantity from splits
                         where tx_guid = ?2"
 );
@@ -228,16 +229,20 @@ pub const NON_MARKETABLE_TRANSACTION_REGISTER_SQL: &str = "
     from splits s 
     where s.tx_guid = ?1 
     order by s.memo";
-pub const TOGGLE_SPLIT_R_FLAG_SQL: &str = concat!("update splits set flags = ((flags & ~",
-                                                  constants!(SPLIT_FLAG_RECONCILED),
-                                                  ")|(~flags & ",
-                                                  constants!(SPLIT_FLAG_RECONCILED),
-                                                  ")) where guid = ?1");
-pub const TOGGLE_SPLIT_T_FLAG_SQL: &str = concat!("update splits set flags = ((flags & ~",
-                                                  constants!(SPLIT_FLAG_TRANSFER),
-                                                  ")|(~flags & ",
-                                                  constants!(SPLIT_FLAG_TRANSFER),
-                                                  ")) where guid = ?1");
+pub const TOGGLE_SPLIT_R_FLAG_SQL: &str = concat!(
+    "update splits set flags = ((flags & ~",
+    constants!(SPLIT_FLAG_RECONCILED),
+    ")|(~flags & ",
+    constants!(SPLIT_FLAG_RECONCILED),
+    ")) where guid = ?1"
+);
+pub const TOGGLE_SPLIT_T_FLAG_SQL: &str = concat!(
+    "update splits set flags = ((flags & ~",
+    constants!(SPLIT_FLAG_TRANSFER),
+    ")|(~flags & ",
+    constants!(SPLIT_FLAG_TRANSFER),
+    ")) where guid = ?1"
+);
 pub const NEW_SPLIT_SQL: &str = "
     insert into splits (guid, tx_guid, account_guid, memo, flags, 
                        value, quantity) 
@@ -277,11 +282,12 @@ pub const CHECK_INUSE_COMMODITY_SQL: &str =
 pub const DELETE_COMMODITY_SQL: &str = "delete from commodities where guid = ?1";
 pub const LATEST_QUOTE_TIMESTAMP_SQL: &str = "select max(timestamp) from prices";
 pub const DELETE_QUOTE_SQL: &str = "delete from prices where guid = ?1";
-pub const NEW_QUOTE_SQL: &str =
-    concat!("insert into prices (guid, commodity_guid, timestamp, value) 
+pub const NEW_QUOTE_SQL: &str = concat!(
+    "insert into prices (guid, commodity_guid, timestamp, value) 
                             values (",
-            constants!(NEW_UUID),
-            ", ?1, datetime('now', 'localtime'), 0)");
+    constants!(NEW_UUID),
+    ", ?1, datetime('now', 'localtime'), 0)"
+);
 pub const QUOTE_INCREMENT_TIMESTAMP_SQL: &str =
     "update prices set timestamp = date(timestamp, ?1 || ' days') where guid = ?2";
 pub const QUOTE_TIMESTAMP_TO_FIRST_OF_MONTH_SQL: &str =
@@ -300,12 +306,12 @@ pub const PRICES_SQL: &str = "
     where p.commodity_guid = ?1
     order by p.timestamp desc";
 pub const RECONCILED_BALANCE_SQL: &str = concat!(
-                                                 "
+    "
     select sum(value) 
     from splits
     where account_guid = ?1 and (flags & ",
-                                                 constants!(SPLIT_FLAG_RECONCILED),
-                                                 ")"
+    constants!(SPLIT_FLAG_RECONCILED),
+    ")"
 );
 pub const UPDATE_MONEY_MARKET_VALUE_QUANTITY_SQL: &str =
     "update splits set value = ?1, quantity = ?1 where guid = ?2";

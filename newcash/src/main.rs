@@ -16,6 +16,9 @@
 // along with the Newcash Suite.  It is also available at <http://www.gnu.org/licenses/>.
 
 extern crate gdk;
+extern crate glib;
+extern crate glib_sys;
+extern crate gobject_sys;
 extern crate gtk;
 extern crate regex;
 extern crate rusqlite;
@@ -46,11 +49,13 @@ use constants::{
 use gdk::enums::key;
 use gdk::EventType::ButtonPress;
 use gdk::{EventButton, EventKey, ModifierType};
+use glib::types::Type;
+use gtk::prelude::GtkMenuExtManual;
 use gtk::{
     accelerator_get_default_mod_mask, CellLayoutExt, CellRendererText, ContainerExt,
-    GtkMenuExtManual, GtkMenuItemExt, GtkWindowExt, Inhibit, Menu, MenuItem, MenuShellExt,
-    PolicyType, ScrolledWindow, ScrolledWindowExt, TreeIter, TreeModelExt, TreePath, TreeStore,
-    TreeView, TreeViewColumnExt, TreeViewExt, Type, WidgetExt, Window, WindowType, NONE_ADJUSTMENT,
+    GtkMenuItemExt, GtkWindowExt, Inhibit, Menu, MenuItem, MenuShellExt, PolicyType,
+    ScrolledWindow, ScrolledWindowExt, TreeIter, TreeModelExt, TreePath, TreeStore, TreeView,
+    TreeViewColumnExt, TreeViewExt, WidgetExt, Window, WindowType, NONE_ADJUSTMENT,
 };
 use queries::{BASIC_INFO_SQL, UNBALANCED_TRANSACTIONS_SQL};
 use rusqlite::{params, Connection, LoadExtensionGuard};
@@ -80,17 +85,16 @@ fn main() {
     // Check that the number of arguments is correct
     if actual_arg_count != N_ARGS {
         panic!(
-               "Incorrect number of command line arguments: {}. Should  be {}.
+            "Incorrect number of command line arguments: {}. Should  be {}.
 Usage: newcash pathToExtensionsLibrary pathToDatabase",
-               actual_arg_count, N_ARGS
+            actual_arg_count, N_ARGS
         );
     }
 
     let db_path = env::args().nth(DB_PATH_INDEX).unwrap();
     let db = Connection::open(&db_path).unwrap();
     let (root_account_guid, book_name, unspecified_account_guid) =
-        db.query_row(BASIC_INFO_SQL, params![], get_result!(string_string_string))
-          .unwrap();
+        db.query_row(BASIC_INFO_SQL, params![], get_result!(string_string_string)).unwrap();
 
     // Initialize gtk
     gtk::init().unwrap();
@@ -110,32 +114,30 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
     // but while a store is a model, a model is not a store. Thus the store cannot be obtained from the view.
     // There are operations that you can perform on a store but not a model and
     // those operations are needed in Newcash. This makes it necessary to record the store in the globals structure.
-    let globals = Rc::new(Globals { account_copy_buffer: RefCell::new(None),
-                                    account_registers: RefCell::new(HashMap::new()),
-                                    accounts_store: TreeStore::new(&[Type::String,
-                                                                     Type::String,
-                                                                     Type::I32]),
-                                    accounts_view: TreeView::new(),
-                                    accounts_window: Window::new(WindowType::Toplevel),
-                                    book_name,
-                                    db,
-                                    db_path,
-                                    guid_processed: RefCell::new(HashSet::new()),
-                                    guid_to_full_path: RefCell::new(HashMap::new()),
-                                    modifiers: accelerator_get_default_mod_mask(),
-                                    root_account_guid: Rc::new(root_account_guid),
-                                    show_hidden: RefCell::new(false),
-                                    transaction_registers: RefCell::new(HashMap::new()),
-                                    unspecified_account_guid });
+    let globals = Rc::new(Globals {
+        account_copy_buffer: RefCell::new(None),
+        account_registers: RefCell::new(HashMap::new()),
+        accounts_store: TreeStore::new(&[Type::String, Type::String, Type::I32]),
+        accounts_view: TreeView::new(),
+        accounts_window: Window::new(WindowType::Toplevel),
+        book_name,
+        db,
+        db_path,
+        guid_processed: RefCell::new(HashSet::new()),
+        guid_to_full_path: RefCell::new(HashMap::new()),
+        modifiers: accelerator_get_default_mod_mask(),
+        root_account_guid: Rc::new(root_account_guid),
+        show_hidden: RefCell::new(false),
+        transaction_registers: RefCell::new(HashMap::new()),
+        unspecified_account_guid,
+    });
 
     // Load sqlite extensions, so we have math functions
     let unix_extensions_file_path = env::args().nth(EXTENSIONS_LIBRARY_FILE_INDEX).unwrap();
     let extensions_file_path = Path::new(&unix_extensions_file_path);
     {
         let _guard = LoadExtensionGuard::new(&globals.db).unwrap();
-        &globals.db
-                .load_extension(extensions_file_path, None)
-                .unwrap();
+        &globals.db.load_extension(extensions_file_path, None).unwrap();
     }
 
     // Set rusqlite cache capacity
@@ -158,25 +160,23 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
     create_accounts_model(&globals);
 
     // Hook up the store to the view
-    globals.accounts_view
-           .set_model(Some(&globals.accounts_store));
+    globals.accounts_view.set_model(Some(&globals.accounts_store));
 
     scrolled_window.add(&globals.accounts_view);
     scrolled_window.set_policy(PolicyType::Never, PolicyType::Automatic);
     globals.accounts_window.add(&scrolled_window);
 
     // Set default size
-    globals.accounts_window
-           .set_default_size(ACCOUNTS_WINDOW_MIN_WIDTH, ACCOUNTS_WINDOW_MIN_HEIGHT);
+    globals.accounts_window.set_default_size(ACCOUNTS_WINDOW_MIN_WIDTH, ACCOUNTS_WINDOW_MIN_HEIGHT);
 
     // Set window title
-    globals.accounts_window
-           .set_title(format!("{} ({})", &globals.db_path, &globals.book_name).as_str());
+    globals
+        .accounts_window
+        .set_title(format!("{} ({})", &globals.db_path, &globals.book_name).as_str());
 
     // Enable interactive search
     globals.accounts_view.set_enable_search(true);
-    globals.accounts_view
-           .set_search_column(ACCOUNT_TREE_STORE_NAME);
+    globals.accounts_view.set_search_column(ACCOUNT_TREE_STORE_NAME);
 
     // Make sure expanders are visible
     globals.accounts_view.set_show_expanders(true);
@@ -190,11 +190,9 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
     // Set up callback to handle deletion of the accounts window
     let globals_delete_event = globals.clone();
     globals.accounts_window.connect_delete_event(move |_, _| {
-                               let mut non_zero_balance = false;
-                               for transaction_register in
-                                   globals_delete_event.transaction_registers.borrow().values()
-                               {
-                                   if prepare_statement!(UNBALANCED_TRANSACTIONS_SQL, globals_delete_event)
+        let mut non_zero_balance = false;
+        for transaction_register in globals_delete_event.transaction_registers.borrow().values() {
+            if prepare_statement!(UNBALANCED_TRANSACTIONS_SQL, globals_delete_event)
                 .query_row(params![&*transaction_register.guid], get_result!(f64))
                 .unwrap()
                 > EPSILON
@@ -202,92 +200,106 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
                 non_zero_balance = true;
                 break;
             }
-                               }
-                               if non_zero_balance {
-                                   utilities::display_message_dialog("You have at least one open \
-                                                                      transaction register with \
-                                                                      a non-zero \
-                                                                      balance.\nPlease properly \
-                                                                      balance the transaction(s) \
-                                                                      before attempting to quit \
-                                                                      from Newcash",
-                                                                     &globals_delete_event);
-                                   Inhibit(true)
-                               } else {
-                                   gtk::main_quit();
-                                   // Let the default handler destroy the window.
-                                   Inhibit(false)
-                               }
-                           });
+        }
+        if non_zero_balance {
+            utilities::display_message_dialog(
+                "You have at least one open \
+                 transaction register with \
+                 a non-zero \
+                 balance.\nPlease properly \
+                 balance the transaction(s) \
+                 before attempting to quit \
+                 from Newcash",
+                &globals_delete_event,
+            );
+            Inhibit(true)
+        } else {
+            gtk::main_quit();
+            // Let the default handler destroy the window.
+            Inhibit(false)
+        }
+    });
 
     // Set up to handle test_expand_row signals on the accounts window's tree view
     let globals_test_expand_row = globals.clone();
-    globals.accounts_view
-           .connect_test_expand_row(move |_view: &TreeView, iter: &TreeIter, _path: &TreePath| {
-               if let Some(child_iter) = globals_test_expand_row.accounts_store
-                                                                .iter_children(Some(iter))
-               {
-                   loop {
-                       // Obtain the guid of the child account
-                       let child_guid: String =
-                           globals_test_expand_row.accounts_store
-                                                  .get_value(&child_iter, ACCOUNT_TREE_STORE_GUID)
-                                                  .get()
-                                                  .unwrap();
-                       // And add its child to the store, the grandchild of the clicked node
-                       add_account_tree_child_nodes(&child_guid,
-                                                    &child_iter,
-                                                    &globals_test_expand_row);
-                       if !globals_test_expand_row.accounts_store
-                                                  .iter_next(&child_iter)
-                       {
-                           break;
-                       }
-                   }
-               }
-               Inhibit(false)
-           });
+    globals.accounts_view.connect_test_expand_row(
+        move |_view: &TreeView, iter: &TreeIter, _path: &TreePath| {
+            if let Some(child_iter) =
+                globals_test_expand_row.accounts_store.iter_children(Some(iter))
+            {
+                loop {
+                    // Obtain the guid of the child account
+                    let child_guid: String = globals_test_expand_row
+                        .accounts_store
+                        .get_value(&child_iter, ACCOUNT_TREE_STORE_GUID)
+                        .get()
+                        .unwrap()
+                        .unwrap();
+                    // And add its child to the store, the grandchild of the clicked node
+                    add_account_tree_child_nodes(
+                        &child_guid,
+                        &child_iter,
+                        &globals_test_expand_row,
+                    );
+                    if !globals_test_expand_row.accounts_store.iter_next(&child_iter) {
+                        break;
+                    }
+                }
+            }
+            Inhibit(false)
+        },
+    );
 
     // Set up to handle row_activated signals on the accounts window's tree view
     let globals_row_activated = globals.clone();
-    globals.accounts_view
-           .connect_row_activated(move |_, path: &TreePath, _| {
-               if let Some(iter) = globals_row_activated.accounts_store.get_iter(&path) {
-                   let flags: i32 = globals_row_activated.accounts_store
-                                                         .get_value(&iter, ACCOUNT_TREE_STORE_FLAGS)
-                                                         .get()
-                                                         .unwrap();
-                   if (flags & ACCOUNT_FLAG_PLACEHOLDER) != 0 {
-                       display_message_dialog("Be aware that you have requested an account \
-                                               register for a placeholder account.",
-                                              &globals_row_activated);
-                   }
-                   let account_guid: String =
-                       globals_row_activated.accounts_store
-                                            .get_value(&iter, ACCOUNT_TREE_STORE_GUID)
-                                            .get()
-                                            .unwrap();
-                   let marketable_p: bool;
-                   let path: String;
-                   {
-                       let inherited_p_stmt =
-                           prepare_statement!(INHERITED_P_SQL, globals_row_activated);
-                       marketable_p = inherited_p(inherited_p_stmt,
-                                                  &account_guid,
-                                                  ACCOUNT_FLAG_DESCENDENTS_ARE_ASSETS)
-                                      && inherited_p(inherited_p_stmt,
-                                                     &account_guid,
-                                                     ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE);
-                       path = guid_to_path(prepare_statement!(GUID_TO_PATH_SQL,
-                                                              globals_row_activated),
-                                           &account_guid);
-                   }
-                   create_account_register(account_guid,
-                                           marketable_p,
-                                           path.as_str(),
-                                           &globals_row_activated);
-               }
-           });
+    globals.accounts_view.connect_row_activated(move |_, path: &TreePath, _| {
+        if let Some(iter) = globals_row_activated.accounts_store.get_iter(&path) {
+            let flags: i32 = globals_row_activated
+                .accounts_store
+                .get_value(&iter, ACCOUNT_TREE_STORE_FLAGS)
+                .get()
+                .unwrap()
+                .unwrap();
+            if (flags & ACCOUNT_FLAG_PLACEHOLDER) != 0 {
+                display_message_dialog(
+                    "Be aware that you have requested an \
+                     account register for a placeholder \
+                     account.",
+                    &globals_row_activated,
+                );
+            }
+            let account_guid: String = globals_row_activated
+                .accounts_store
+                .get_value(&iter, ACCOUNT_TREE_STORE_GUID)
+                .get()
+                .unwrap()
+                .unwrap();
+            let marketable_p: bool;
+            let path: String;
+            {
+                let inherited_p_stmt = prepare_statement!(INHERITED_P_SQL, globals_row_activated);
+                marketable_p = inherited_p(
+                    inherited_p_stmt,
+                    &account_guid,
+                    ACCOUNT_FLAG_DESCENDENTS_ARE_ASSETS,
+                ) && inherited_p(
+                    inherited_p_stmt,
+                    &account_guid,
+                    ACCOUNT_FLAG_DESCENDENTS_ARE_MARKETABLE,
+                );
+                path = guid_to_path(
+                    prepare_statement!(GUID_TO_PATH_SQL, globals_row_activated),
+                    &account_guid,
+                );
+            }
+            create_account_register(
+                account_guid,
+                marketable_p,
+                path.as_str(),
+                &globals_row_activated,
+            );
+        }
+    });
 
     // Set up to handle mouse button press events
     // Build the top-level popup menu
@@ -297,16 +309,16 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
         let accounts_menu_item = MenuItem::new_with_label("New account (Ctrl-n)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              new_account(&globals);
-                          });
+            new_account(&globals);
+        });
         accounts_menu.append(&accounts_menu_item);
     }
     {
         let accounts_menu_item = MenuItem::new_with_label("Edit account (Ctrl-e)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              edit_account(&globals);
-                          });
+            edit_account(&globals);
+        });
         accounts_menu.append(&accounts_menu_item);
     }
     {
@@ -314,13 +326,15 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
             MenuItem::new_with_label("Copy account name to system clipboard (Ctrl-c)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              copy_account_value_to_clipboard(ACCOUNT_TREE_STORE_NAME,
-                                                              "Improper selection. Cannot \
-                                                               perform requested copy of account \
-                                                               name.",
-                                                              false,
-                                                              &globals);
-                          });
+            copy_account_value_to_clipboard(
+                ACCOUNT_TREE_STORE_NAME,
+                "Improper selection. Cannot \
+                 perform requested copy of account \
+                 name.",
+                false,
+                &globals,
+            );
+        });
         accounts_menu.append(&accounts_menu_item);
     }
     {
@@ -328,13 +342,15 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
             MenuItem::new_with_label("Copy account path to system clipboard (Ctrl-Shift-c)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              copy_account_value_to_clipboard(ACCOUNT_TREE_STORE_GUID,
-                                                              "Improper selection. Cannot \
-                                                               perform requested copy of account \
-                                                               path.",
-                                                              true,
-                                                              &globals);
-                          });
+            copy_account_value_to_clipboard(
+                ACCOUNT_TREE_STORE_GUID,
+                "Improper selection. Cannot \
+                 perform requested copy of account \
+                 path.",
+                true,
+                &globals,
+            );
+        });
         accounts_menu.append(&accounts_menu_item);
     }
     {
@@ -342,13 +358,15 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
             MenuItem::new_with_label("Copy account guid to system clipboard (Ctrl-Shift-g)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              copy_account_value_to_clipboard(ACCOUNT_TREE_STORE_GUID,
-                                                              "Improper selection. Cannot \
-                                                               perform requested copy of account \
-                                                               guid.",
-                                                              false,
-                                                              &globals);
-                          });
+            copy_account_value_to_clipboard(
+                ACCOUNT_TREE_STORE_GUID,
+                "Improper selection. Cannot \
+                 perform requested copy of account \
+                 guid.",
+                false,
+                &globals,
+            );
+        });
         accounts_menu.append(&accounts_menu_item);
     }
     {
@@ -356,8 +374,8 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
             MenuItem::new_with_label("Copy account to Newcash clipboard (Alt-c)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              copy_account_guid_to_account_copy_buffer(&globals);
-                          });
+            copy_account_guid_to_account_copy_buffer(&globals);
+        });
         accounts_menu.append(&accounts_menu_item);
     }
     {
@@ -365,40 +383,40 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
             MenuItem::new_with_label("Paste account from Newcash clipboard (Alt-v)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              paste_account(&globals);
-                          });
+            paste_account(&globals);
+        });
         accounts_menu.append(&accounts_menu_item);
     }
     {
         let accounts_menu_item = MenuItem::new_with_label("Re-parent account (Ctrl-r)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              reparent_account(&globals);
-                          });
+            reparent_account(&globals);
+        });
         accounts_menu.append(&accounts_menu_item);
     }
     {
         let accounts_menu_item = MenuItem::new_with_label("Delete account (Ctrl-Shift-d)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              delete_account(&globals);
-                          });
+            delete_account(&globals);
+        });
         accounts_menu.append(&accounts_menu_item);
     }
     {
         let accounts_menu_item = MenuItem::new_with_label("Display commodities (Ctrl-m)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              create_commodities_register(&globals);
-                          });
+            create_commodities_register(&globals);
+        });
         accounts_menu.append(&accounts_menu_item);
     }
     {
         let accounts_menu_item = MenuItem::new_with_label("Toggle show hidden accounts (Ctrl-h)");
         let globals = globals.clone();
         accounts_menu_item.connect_activate(move |_accounts_menu_item: &MenuItem| {
-                              toggle_show_hidden(&globals);
-                          });
+            toggle_show_hidden(&globals);
+        });
         accounts_menu.append(&accounts_menu_item);
     }
 
@@ -417,89 +435,96 @@ Usage: newcash pathToExtensionsLibrary pathToDatabase",
 
     // Connect to signal for key press events
     let key_press_globals = globals.clone();
-    globals.accounts_view
-           .connect_key_press_event(move |_accounts_view: &TreeView, event_key: &EventKey| {
-               let masked_state: u32 =
-                   event_key.get_state().bits() & key_press_globals.modifiers.bits();
-               // Ctrl key pressed?
-               if masked_state == ModifierType::CONTROL_MASK.bits() {
-                   match event_key.get_keyval() {
-                       key::n => {
-                           new_account(&key_press_globals);
-                           Inhibit(true)
-                       }
-                       key::e => {
-                           edit_account(&key_press_globals);
-                           Inhibit(true)
-                       }
-                       key::r => {
-                           reparent_account(&key_press_globals);
-                           Inhibit(true)
-                       }
-                       key::c => {
-                           copy_account_value_to_clipboard(ACCOUNT_TREE_STORE_NAME,
-                                                           "Improper selection. Cannot perform \
-                                                            requested copy of account name.",
-                                                           false,
-                                                           &key_press_globals);
-                           Inhibit(true)
-                       }
-                       key::h => {
-                           toggle_show_hidden(&key_press_globals);
-                           Inhibit(true)
-                       }
-                       key::m => {
-                           create_commodities_register(&key_press_globals);
-                           Inhibit(true)
-                       }
-                       // Indicate we didn't handle the event
-                       _ => Inhibit(false),
-                   }
-               } else if masked_state
-                         == (ModifierType::CONTROL_MASK.bits() | ModifierType::SHIFT_MASK.bits())
-               {
-                   match event_key.get_keyval() {
-                       key::C => {
-                           copy_account_value_to_clipboard(ACCOUNT_TREE_STORE_GUID,
-                                                           "Improper selection. Cannot perform \
-                                                            requested copy of account path.",
-                                                           true,
-                                                           &key_press_globals);
-                           Inhibit(true)
-                       }
-                       key::G => {
-                           copy_account_value_to_clipboard(ACCOUNT_TREE_STORE_GUID,
-                                                           "Improper selection. Cannot perform \
-                                                            requested copy of account guid.",
-                                                           false,
-                                                           &key_press_globals);
-                           Inhibit(true)
-                       }
-                       key::D => {
-                           delete_account(&key_press_globals);
-                           Inhibit(true)
-                       }
-                       // Indicate we didn't handle the event
-                       _ => Inhibit(false),
-                   }
-               } else if masked_state == ModifierType::MOD1_MASK.bits() {
-                   match event_key.get_keyval() {
-                       key::c => {
-                           copy_account_guid_to_account_copy_buffer(&key_press_globals);
-                           Inhibit(true)
-                       }
-                       key::v => {
-                           paste_account(&key_press_globals);
-                           Inhibit(true)
-                       }
-                       // Indicate we didn't handle the event
-                       _ => Inhibit(false),
-                   }
-               } else {
-                   // We didn't handle the event
-                   Inhibit(false)
-               }
-           });
+    globals.accounts_view.connect_key_press_event(
+        move |_accounts_view: &TreeView, event_key: &EventKey| {
+            let masked_state: u32 =
+                event_key.get_state().bits() & key_press_globals.modifiers.bits();
+            // Ctrl key pressed?
+            if masked_state == ModifierType::CONTROL_MASK.bits() {
+                match event_key.get_keyval() {
+                    key::n => {
+                        new_account(&key_press_globals);
+                        Inhibit(true)
+                    }
+                    key::e => {
+                        edit_account(&key_press_globals);
+                        Inhibit(true)
+                    }
+                    key::r => {
+                        reparent_account(&key_press_globals);
+                        Inhibit(true)
+                    }
+                    key::c => {
+                        copy_account_value_to_clipboard(
+                            ACCOUNT_TREE_STORE_NAME,
+                            "Improper selection. Cannot perform \
+                             requested copy of account name.",
+                            false,
+                            &key_press_globals,
+                        );
+                        Inhibit(true)
+                    }
+                    key::h => {
+                        toggle_show_hidden(&key_press_globals);
+                        Inhibit(true)
+                    }
+                    key::m => {
+                        create_commodities_register(&key_press_globals);
+                        Inhibit(true)
+                    }
+                    // Indicate we didn't handle the event
+                    _ => Inhibit(false),
+                }
+            } else if masked_state
+                == (ModifierType::CONTROL_MASK.bits() | ModifierType::SHIFT_MASK.bits())
+            {
+                match event_key.get_keyval() {
+                    key::C => {
+                        copy_account_value_to_clipboard(
+                            ACCOUNT_TREE_STORE_GUID,
+                            "Improper selection. Cannot perform \
+                             requested copy of account path.",
+                            true,
+                            &key_press_globals,
+                        );
+                        Inhibit(true)
+                    }
+                    key::G => {
+                        copy_account_value_to_clipboard(
+                            ACCOUNT_TREE_STORE_GUID,
+                            "Improper selection. Cannot perform \
+                             requested copy of account guid.",
+                            false,
+                            &key_press_globals,
+                        );
+                        Inhibit(true)
+                    }
+                    key::D => {
+                        delete_account(&key_press_globals);
+                        Inhibit(true)
+                    }
+                    // Indicate we didn't handle the event
+                    _ => Inhibit(false),
+                }
+            } else if masked_state == ModifierType::MOD1_MASK.bits() {
+                match event_key.get_keyval() {
+                    key::c => {
+                        copy_account_guid_to_account_copy_buffer(&key_press_globals);
+                        Inhibit(true)
+                    }
+                    key::v => {
+                        paste_account(&key_press_globals);
+                        Inhibit(true)
+                    }
+                    // Indicate we didn't handle the event
+                    _ => Inhibit(false),
+                }
+            } else {
+                // We didn't handle the event
+                Inhibit(false)
+            }
+        },
+    );
 
     // Run the main gtk loop
     gtk::main();

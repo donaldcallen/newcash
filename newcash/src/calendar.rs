@@ -22,14 +22,16 @@ use gtk::{
 };
 use utilities::maybe_date;
 
-pub fn display_calendar(initial_date: &str, parent_window: &Window, globals: &Globals)
-                        -> Option<String> {
+pub fn display_calendar(
+    initial_date: &str, parent_window: &Window, globals: &Globals,
+) -> Option<String> {
     let calendar = Calendar::new();
-    let dialog = Dialog::new_with_buttons(Some("Select date"),
-                                          Some(parent_window),
-                                          DialogFlags::MODAL,
-                                          &[("OK", ResponseType::Ok),
-                                            ("Cancel", ResponseType::Cancel)]);
+    let dialog = Dialog::new_with_buttons(
+        Some("Select date"),
+        Some(parent_window),
+        DialogFlags::MODAL,
+        &[("OK", ResponseType::Ok), ("Cancel", ResponseType::Cancel)],
+    );
     let content_area = dialog.get_content_area();
     content_area.add(&calendar);
 
@@ -52,10 +54,10 @@ pub fn display_calendar(initial_date: &str, parent_window: &Window, globals: &Gl
 
     // And handle the day-selected signal to put a marker on the new date
     calendar.connect_day_selected(|calendar| {
-                let (_, _, day) = calendar.get_date();
-                calendar.clear_marks();
-                calendar.mark_day(day);
-            });
+        let (_, _, day) = calendar.get_date();
+        calendar.clear_marks();
+        calendar.mark_day(day);
+    });
 
     dialog.show_all();
     if dialog.run() == ResponseType::Ok {
