@@ -20,14 +20,14 @@ EXTENSIONS_DIR=${HOME}/lib/`uname`
 report_directory=.
 report_name=reports
 tsv_file_name=Nothing
-begin_date=`sqlite3 "" "select date('now', 'localtime', '-1 years', '+1 days');"` 
+begin_date=`sqlite3 "" "select date('now', 'localtime', '-1 years', '+1 days');"`
 end_date=`date +%F`
 depth=5
 quotes=false
 generate_reports=true
 
 while getopts c:f:w:n:b:e:d:t:sh option
-do 
+do
 	case $option in
 	f)
 		newcash_database_path=$OPTARG;;
@@ -63,21 +63,27 @@ then
 fi
 newcash_database_path=$1
 
-if $(${quotes}) 
+if $(${quotes})
 then
 	newcashGetQuotes ${newcash_database_path}
 fi
 
 if $(${generate_reports})
 then
+    balance_sheet_income_expense_statement_file=`mktemp -p /tmp XXXXXX`
+    investment_file=`mktemp -p /tmp XXXXXX`
     if test $tsv_file_name != Nothing
     then full_tsv_file_name=${report_directory}/${tsv_file_name}.tsv
     else full_tsv_file_name=Nothing
     fi
-	report_generator  ${begin_date} ${end_date} ${depth} ${newcash_database_path} ${report_directory}/${report_name}.tex ${full_tsv_file_name} ${EXTENSIONS_DIR}/libSqliteExtensions.so
+	balance_sheet_income_expense_statement  ${begin_date} ${end_date} ${depth} ${newcash_database_path} ${balance_sheet_income_expense_statement_file} ${EXTENSIONS_DIR}/libSqliteExtensions.so &
+	investments  ${end_date} ${newcash_database_path} ${investment_file} ${full_tsv_file_name} ${EXTENSIONS_DIR}/libSqliteExtensions.so &
+    wait
+    cat ${balance_sheet_income_expense_statement_file} ${investment_file} > ${report_directory}/${report_name}.tex
 fi
 
 while pdflatex --output-directory ${report_directory} ${report_directory}/${report_name} | fgrep 'Rerun LaTeX'
 do
 	echo 'Re-running Latex to get table widths right.'
 done
+rm ${balance_sheet_income_expense_statement_file} ${investment_file}
