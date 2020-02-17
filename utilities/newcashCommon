@@ -1,3 +1,32 @@
+# The columns arg is the number of columns the query returns
+proc oneRow {columns result sql} {
+    switch [llength $result] {
+        0 {
+            puts "The query $sql failed to return a row"
+            exit 1
+        }
+        $columns {
+            return $result
+        }
+        default {
+            puts "The query $sql returned an incorrect number of rows"
+            exit 1
+        }
+    }
+}
+proc maybeOneRow {columns result sql} {
+    switch [llength $result] {
+        0 -
+        $columns {
+            return $result
+        }
+        default {
+            puts "The query $sql returned an incorrect number of rows"
+            exit 1
+        }
+    }
+}
+
 proc guidToPath {database accountGuid} {
     set path {}
     while {1} {
