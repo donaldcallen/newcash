@@ -349,7 +349,7 @@ fn r_toggled(path: &TreePath, account_register: &AccountRegister, globals: &Glob
 // for an account register with a lot of transactions. But the situation just described is unlikely. Most of the time,
 // only the register where the editing is done is displayed, so handling this situation in a brute force way, to keep the
 // code simple, makes sense. The account_register argument is used to indicate whether to refresh all open registers, or
-// all but the edited one. If all registers are desired, then the account_registers argument should be NULL. If an actual
+// all but the edited one. If all registers are desired, then the account_registers argument should be None. If an actual
 // account_register pointer is supplied, then that register will be skipped.
 // This routine also needs to be able to be told how to handle post-refresh selection. That is accomplished via the first argument.
 pub fn refresh_account_registers(
@@ -360,8 +360,6 @@ pub fn refresh_account_registers(
         account_register: &AccountRegister, maybe_transaction_guid: Option<&String>,
         globals: &Globals,
     ) {
-        // Record the current cursor information
-        let (_, maybe_column) = account_register.core.view.get_cursor();
         // Detach the store/model from the view
         let temp: Option<&TreeModel> = None;
         account_register.core.view.set_model(temp);
@@ -371,21 +369,12 @@ pub fn refresh_account_registers(
         // Re-connect store to the view
         account_register.core.view.set_model(Some(&account_register.store));
         if let Some(transaction_guid) = maybe_transaction_guid {
-            if let Some(focus_column) = maybe_column {
-                select_row_by_guid(
-                    &account_register.core.view,
-                    &transaction_guid,
-                    STORE_TRANSACTION_GUID,
-                    &focus_column,
+            select_row_by_guid(
+                &account_register.core.view,
+                &transaction_guid,
+                STORE_TRANSACTION_GUID,
+                &column_index_to_column(&account_register.core.view, VIEW_DATE),
                 );
-            } else {
-                select_row_by_guid(
-                    &account_register.core.view,
-                    &transaction_guid,
-                    STORE_TRANSACTION_GUID,
-                    &column_index_to_column(&account_register.core.view, VIEW_DATE),
-                );
-            }
         }
     }
     for account_register in globals.account_registers.borrow().values() {
